@@ -2,7 +2,8 @@
 
 一个功能完整的网址导航浏览器插件，支持自定义分类和数据导入导出。
 根目录有示例数据,你可以尝试导入数据看看,
-![Screenshot_2]([https://github.com/username/test/assets/108919293/d8206e8b-5c62-49f9-94e4-19b9d9d5c6e6](https://github.com/ouonte/speed_nav/blob/main/git_1.png?raw=true))
+!![Project Logo](https://github.com/ouonte/speed_nav/blob/main/git_1.png?raw=true)
+
 
 ## 功能特点
 
@@ -200,6 +201,7 @@ MIT License
 - 但是禁止上架任何浏览器插件商城
 - 但是禁止上架任何浏览器插件商城
   2025年12月26日14:15:18
+
 
 
 
