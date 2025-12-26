@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>速导航 - 快速查找目标网址</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部主类导航 -->
+        <header class="top-nav">
+            <div class="top-nav-container">
+                <ul class="top-nav-list">
+                    <li class="top-nav-item active" data-main-category="general">
+                        <i class="fas fa-compass"></i>
+                        <span>综合导航</span>
+                    </li>
+                    <li class="top-nav-item" data-main-category="ai">
+                        <i class="fas fa-robot"></i>
+                        <span>AI类导航</span>
+                    </li>
+                    <li class="top-nav-item" data-main-category="design">
+                        <i class="fas fa-paint-brush"></i>
+                        <span>设计类导航</span>
+                    </li>
+                </ul>
+                <button class="theme-toggle" id="themeToggle" aria-label="切换主题">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- 左侧一级导航 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1 class="logo">速导航</h1>
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="搜索网址或分类">
+                </div>
+            </div>
+            <nav class="main-nav">
+                <ul>
+                    <li class="nav-item active" data-category="daily">
+                        <i class="fas fa-briefcase"></i>
+                        <span>日常办公</span>
+                    </li>
+                    <li class="nav-item" data-category="education">
+                        <i class="fas fa-graduation-cap"></i>
+                        <span>学习教育</span>
+                    </li>
+                    <li class="nav-item" data-category="entertainment">
+                        <i class="fas fa-film"></i>
+                        <span>娱乐休闲</span>
+                    </li>
+                    <li class="nav-item" data-category="life">
+                        <i class="fas fa-home"></i>
+                        <span>生活服务</span>
+                    </li>
+                    <li class="nav-item" data-category="tools">
+                        <i class="fas fa-tools"></i>
+                        <span>工具资源</span>
+                    </li>
+                    <li class="nav-item" data-category="industry">
+                        <i class="fas fa-building"></i>
+                        <span>行业网站</span>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- 右侧内容区域 -->
+        <main class="main-content">
+            <!-- 内容块 -->
+            <section class="content">
+                <!-- 常用网址快捷区 -->
+                <div class="quick-links">
+                    <h3>常用网址</h3>
+                    <div class="quick-links-grid">
+                        <div class="quick-link-item">
+                            <i class="fab fa-bilibili"></i>
+                            <span>Bilibili</span>
+                        </div>
+                        <div class="quick-link-item">
+                            <i class="fab fa-weixin"></i>
+                            <span>微信</span>
+                        </div>
+                        <div class="quick-link-item">
+                            <i class="fab fa-qq"></i>
+                            <span>QQ</span>
+                        </div>
+                        <div class="quick-link-item">
+                            <i class="fab fa-alipay"></i>
+                            <span>支付宝</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧二级导航 -->
+                <nav class="sub-nav">
+                    <div class="sub-nav-container">
+                        <ul class="sub-nav-list" id="subNavList">
+                            <!-- 动态生成二级导航 -->
+                        </ul>
+                    </div>
+                </nav>
+
+                <!-- 网址列表 -->
+                <div class="website-grid" id="websiteGrid">
+                    <!-- 动态生成网址卡片 -->
+                </div>
+
+                <!-- 底部操作区 -->
+                <div class="bottom-actions">
+                    <button class="action-btn">
+                        <i class="fas fa-plus"></i>
+                        添加网址
+                    </button>
+                    <button class="action-btn">
+                        <i class="fas fa-comment"></i>
+                        用户反馈
+                    </button>
+                </div>
+            </section>
+
+            <!-- 底部友情链接和版权 -->
+            <footer class="footer">
+                <div class="footer-content">
+                    <!-- 版权备案 -->
+                    <div class="copyright">
+                        <p>&copy; 2025 速导航. All rights reserved.</p>
+                        <p>备案号：京ICP备12345678号-1</p>
+                    </div>
+                </div>
+            </footer>
+        </main>
+
+        <!-- 移动端汉堡菜单按钮 -->
+        <button class="hamburger-btn" id="hamburgerBtn">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
