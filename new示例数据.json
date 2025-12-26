@@ -1,0 +1,656 @@
+{
+  "config": {
+    "apiTimeout": 5000,
+    "defaultIconType": "text",
+    "faviconApi": "https://api.xakj02.cn/api/getFavicon?url=",
+    "faviconApiBackup": "https://www.favicon.vip/get.php?url=",
+    "lastCategoryPosition": {
+      "categoryId": "entertainment",
+      "mainCategoryId": "general",
+      "subCategoryId": "video"
+    },
+    "useFaviconIco": false,
+    "useRegex": false,
+    "webdavConfig": {
+      "url": "",
+      "username": "",
+      "password": "",
+      "autoBackupEnabled": false,
+      "autoBackupInterval": "daily",
+      "backupTime": 0
+    }
+  },
+  "mainCategories": [
+    {
+      "categories": [
+        {
+          "icon": "fas fa-folder",
+          "id": "cat_1766653580704_557dcjscq",
+          "name": "Demo",
+          "subCategories": [
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766658224867_r1rd4706n",
+              "name": "输入法",
+              "websites": [
+                {
+                  "desc": "搜狗拼音输入法官网下载，荣获多个国内软件大奖的搜狗拼音输入法是一款打字更准、词库更大、速度更快、外观漂亮、用了让您爱不释手的输入法，是您装机输入的好选择。享受输入，从搜狗开始！",
+                  "id": "web_1766677416384_c8az03qds",
+                  "name": "搜狗输入法-官网",
+                  "tags": [
+                    "搜狗大法好"
+                  ],
+                  "url": "https://shurufa.sogou.com/windows"
+                },
+                {
+                  "desc": "手心输入法是一款智能、高效，无广告骚扰，只专注于输入本质的纯粹输入法。拥有强大的智能输入引擎、丰富的本地词库、在线词库及精美皮肤在线下载，以其丰富的输入方式，海量的在线资源，带给用户超凡的输入体验。目前已全面覆盖Windows、Android、iOS、Mac平台。",
+                  "id": "web_1766677433168_iplc8gtzc",
+                  "name": "手心输入法",
+                  "tags": [
+                    "纯净",
+                    "无光"
+                  ],
+                  "url": "https://www.xinshuru.com/index.html?p=win"
+                },
+                {
+                  "desc": "微信输入法是微信官方出品的中文输入法，提供高效的输入体验、精准的推荐策略、多元的创新玩法。",
+                  "id": "web_1766677510582_p56do73zj",
+                  "name": "微信输入法-简洁好用打字快",
+                  "tags": [
+                    "微信出品"
+                  ],
+                  "url": "https://z.weixin.qq.com/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766677543849_hwcjueh9p",
+                  "name": "百度输入法",
+                  "tags": [
+                    "百度出品"
+                  ],
+                  "url": "https://shurufa.baidu.com/default"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766677632988_nwxq53o7j",
+                  "name": "讯飞输入法官网 - 更好用的手机输入法，提供专业输入法定制解决方案！",
+                  "tags": [
+                    "Ai输入法"
+                  ],
+                  "url": "https://srf.xunfei.cn/#/"
+                },
+                {
+                  "desc": "腾讯QQ拼音官方网站,提供全新的QQ拼音软件下载, QQ拼音是好用的拼音输入法,更快、更准、更绿色的输入法，让书写成为享受,具有词库随身带,精美皮肤更换和智能整句生成特点",
+                  "id": "web_1766677669096_z5qt7cyx9",
+                  "name": "QQ输入法",
+                  "tags": [
+                    "腾讯出品"
+                  ],
+                  "url": "https://qq.pinyin.cn/"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766653580704_1zzs4yo1h",
+              "name": "电脑安全",
+              "websites": [
+                {
+                  "desc": "360集团是全球领先的网络安全与数字化服务提供商，公司以“守护数字世界”为使命，构建了从个人安全（360安全卫士、杀毒软件等，服务超10亿用户）、企业安全（服务90%以上中央部委及大型国企）到国家级网络防御（主导破解多起APT攻击）的全场景安全生态。依托“免费+增值服务”及政企定制化解决方案双轮驱动，360打造了智能硬件、AI安全大脑、大数据分析等前沿技术护城河，累计用户超15亿，拥有2000余项...",
+                  "id": "web_1766677744630_6fkhuxh1k",
+                  "name": "360官网 -360安全中心 - 360安全软件 - 360智能硬件 - 360智能家居 - 360企业服务",
+                  "tags": [
+                    "360出品"
+                  ],
+                  "url": "https://www.360.cn/"
+                },
+                {
+                  "desc": "火绒安全致力于在终端安全领域，为用户提供专业的产品和专注的服务，并持续对外赋能反病毒引擎等自主研发技术，拥有免费个人产品“火绒安全软件”，及企业产品“火绒终端安全管理系统”。",
+                  "id": "web_1766677780792_qeqv4wfqg",
+                  "name": "火绒安全",
+                  "tags": [
+                    "金色传说"
+                  ],
+                  "url": "https://www.huorong.cn/"
+                },
+                {
+                  "desc": "联想电脑管家官方网站，提供正版电脑管家软件官方下载，病毒查杀、木马查杀，保障电脑安全。联想电脑管家是由联想PC核心软件团队精心打造的一款专注联想电脑健康和安全的软件，软件涵盖：垃圾清理、病毒查杀、查杀病毒、杀毒、流氓软件清理、正版免费杀毒软件、捆绑拦截、捆绑安装拦截、弹窗拦截、浏览器保护、主页保护、联想驱动、原厂驱动管理、联想电脑驱动、硬件驱动、笔记本驱动、笔记本电池、摄像头、显卡驱动、声卡驱动、...",
+                  "id": "web_1766677802656_zq0rhuwbn",
+                  "name": "联想电脑_电脑管家_弹窗拦截_杀毒软件_垃圾清理__一键驱动管理__联想官方客服__联想电脑管家官网_-",
+                  "tags": [
+                    "联想电脑"
+                  ],
+                  "url": "https://guanjia.lenovo.com.cn/"
+                },
+                {
+                  "desc": "使用卡巴斯基网络安全软件，获得终极病毒防护。下载免费试用版，保护您的设备抵御最新的网络攻击和威胁。",
+                  "id": "web_1766677837054_8ewfozrs5",
+                  "name": "卡巴斯基免费试用版下载 - 病毒防护 2025 | 卡巴斯基",
+                  "tags": [
+                    "付费"
+                  ],
+                  "url": "https://www.kaspersky.com.cn/downloads"
+                },
+                {
+                  "desc": "微软电脑管家官方网站，微软官方出品，全面体检，深度清理，工具箱。清理系统碎片，释放占用资源，让你的Windows飞速如新。",
+                  "id": "web_1766677874243_yfiqnl6db",
+                  "name": "电脑管家-微软电脑管家官方网站",
+                  "tags": [
+                    "咳咳"
+                  ],
+                  "url": "https://pcmanager.microsoft.com/zh-cn"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766677907625_rdo0kq5v0",
+              "name": "解压缩",
+              "websites": [
+                {
+                  "desc": "WinRAR老亚索软件了",
+                  "id": "web_1766677921954_wfg6bfdlz",
+                  "name": "WinRAR - 压缩软件 老牌压缩软件知名产品 经典装机软件之一",
+                  "tags": [
+                    "老传统"
+                  ],
+                  "url": "https://www.winrar.com.cn/"
+                },
+                {
+                  "desc": "Bandizip official download page",
+                  "id": "web_1766677958771_3aiyyozx6",
+                  "name": "Bandizip 官方网站 - 免费压缩软件下载 (Windows)",
+                  "tags": [
+                    "推荐"
+                  ],
+                  "url": "https://www.bandisoft.com/bandizip/"
+                },
+                {
+                  "desc": "小~方便~",
+                  "id": "web_1766677985106_tshotctyt",
+                  "name": "7-Zip",
+                  "tags": [
+                    "7-zip"
+                  ],
+                  "url": "https://7-zip.org/"
+                },
+                {
+                  "desc": "360压缩是360推出的免费解压缩软件，360压缩快速轻巧、兼容性好、永久免费。360压缩内置云安全引擎，可以检测木马，更安全",
+                  "id": "web_1766678031466_ddbbogy2l",
+                  "name": "360压缩_360推出的免费解压缩软件_360安全中心",
+                  "tags": [
+                    "360出品",
+                    "解压缩软件"
+                  ],
+                  "url": "https://yasuo.360.cn/"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766678083257_1d66cu8vm",
+              "name": "社交通讯",
+              "websites": [
+                {
+                  "desc": "一款跨平台的通讯工具。支持单人、多人参与。通过手机网络发送语音、图片、视频和文字。",
+                  "id": "web_1766678111859_u8k17yoc1",
+                  "name": "微信，是一个生活方式",
+                  "tags": [
+                    "官网",
+                    "腾讯",
+                    "社交"
+                  ],
+                  "url": "https://weixin.qq.com/"
+                },
+                {
+                  "desc": "腾讯QQ，全新版本QQ9上线了！ QQ9，不仅是轻松聊天，更是兴趣社区的聚集地。欢迎下载体验最新版本QQ，体验最新功能！欢迎访问QQ官网，下载新版QQ，了解QQ最新功能就在im.qq.com。",
+                  "id": "web_1766678158985_npswnk5e6",
+                  "name": "QQ-轻松做自己",
+                  "tags": [
+                    "QQ",
+                    "腾讯",
+                    "社交",
+                    "聊天",
+                    "娱乐"
+                  ],
+                  "url": "https://im.qq.com/index/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766678228200_edmqv59fc",
+                  "name": "飞书 - 注册",
+                  "tags": [
+                    "Ai",
+                    "办公文档"
+                  ],
+                  "url": "https://www.feishu.cn/accounts/page/ug_register?template_id=7168397144091885571&tracking_code=701BB000000AemRYAS&utm_from=baidusem_keyword_pc_office_pinpai_pinpai_pinpainew&device=PC&e_keywordid=1165987611706&bd_vid=11422746978765562862"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766678308442_6piywmf1f",
+              "name": "办公软件",
+              "websites": [
+                {
+                  "desc": "Typora: 一款 Markdown 编辑器和阅读器。",
+                  "id": "web_1766678313284_m21f3jdv6",
+                  "name": "Typora 官方中文站",
+                  "tags": [
+                    "MD编辑"
+                  ],
+                  "url": "https://typoraio.cn/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766678327650_sjrth1ma1",
+                  "name": "WPS Office-支持多人在线编辑多种文档格式_WPS官方网站",
+                  "tags": [
+                    "文字编辑"
+                  ],
+                  "url": "https://platform.wps.cn/"
+                },
+                {
+                  "desc": "Paint.NET is free image and photo editing software for computers that run Windows.",
+                  "id": "web_1766678337802_h5zb9wsm6",
+                  "name": "Paint.NET - Free Software for Digital Photo Editing",
+                  "tags": [
+                    "图像编辑"
+                  ],
+                  "url": "https://www.getpaint.net/"
+                },
+                {
+                  "desc": "Visual Studio Code redefines AI-powered coding with GitHub Copilot for building and debugging modern web and cloud applications. Visual Studio Code is free and available on your favorite platform - Li...",
+                  "id": "web_1766678381706_kw38jibrb",
+                  "name": "Visual Studio Code - The open source AI code editor",
+                  "tags": [
+                    "万恶之源",
+                    "代码编辑"
+                  ],
+                  "url": "https://code.visualstudio.com/"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766678422501_i0cm6chs4",
+              "name": "网络存储",
+              "websites": [
+                {
+                  "desc": "",
+                  "id": "web_1766678465562_z9b1u3hnf",
+                  "name": "百度网盘-免费云盘丨文件共享软件丨超大容量丨存储安全",
+                  "tags": [
+                    "百度云"
+                  ],
+                  "url": "https://pan.baidu.com/"
+                },
+                {
+                  "desc": "阿里云盘是一款速度快、不打扰、够安全、易于分享的个人网盘，欢迎你来体验。",
+                  "id": "web_1766678498075_eil6d1lp6",
+                  "name": "阿里云盘 - 备份无忧 整理有序·阿里巴巴集团出品",
+                  "tags": [
+                    "阿里",
+                    "阿里巴巴"
+                  ],
+                  "url": "https://www.alipan.com/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766678527477_56sok6mwk",
+                  "name": "蓝奏·云存储",
+                  "tags": [],
+                  "url": "https://www.lanzou.com/"
+                },
+                {
+                  "desc": "夸克网盘是夸克推出的一款云服务产品，功能包括云存储、高清看剧、文件在线解压、PDF一键转换等。通过夸克网盘可随时随地管理和使用照片、文档、手机资料，目前支持Android、iOS、PC、iPad。\n    夸克网盘是夸克浏览器附带的功能，特点就是和浏览器本身的很多智能小工具打通了。像浏览器的很多文字识别、文件转换、文件扫描存档等功能，都可以兼容到夸克网盘的云空间。\n    此外，很多手机浏览器都有...",
+                  "id": "web_1766678548683_85cm20i9r",
+                  "name": "【夸克网盘】夸克网盘PC网页版端入口",
+                  "tags": [],
+                  "url": "https://pan.quark.cn/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766678576031_qgagwa417",
+                  "name": "123pan.com",
+                  "tags": [
+                    "吆西"
+                  ],
+                  "url": "https://www.123pan.com"
+                },
+                {
+                  "desc": "坚果云是一款提供网盘|云盘|云服务的团队协助软件,可随时随地实现共享文件夹。坚果云网盘支持移动办公,协同办公,文件同步,数据备份,智能管理,在线编辑等功能。",
+                  "id": "web_1766678619268_efx3cfiov",
+                  "name": "坚果云官网|网盘|云盘|云服务|团队协作软件|同步盘",
+                  "tags": [],
+                  "url": "https://www.jianguoyun.com/"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766678654691_l6n08ywgc",
+              "name": "其他",
+              "websites": [
+                {
+                  "desc": "腾讯软件中心提拱10000+款免费软件下载，全部软件都已经过安全杀毒检测。手机、电脑客户端版应用软件大全，官方正版免费的软件下载中心。",
+                  "id": "web_1766678676254_7hd8y4797",
+                  "name": "腾讯软件中心-海量软件高速免费下载",
+                  "tags": [],
+                  "url": "https://pc.qq.com/"
+                },
+                {
+                  "desc": "果核剥壳是一个长期更新的综合科技网站，内容涵盖绿色软件、系统工具、效率应用与科技资讯，坚持分享真正有用、有价值的资源与观点。",
+                  "id": "web_1766678703155_4vugwl5m1",
+                  "name": "果核剥壳 - 互联网的净土",
+                  "tags": [],
+                  "url": "https://www.ghxi.com/"
+                },
+                {
+                  "desc": "联想应用商店为广大用户提供一站式的软件、游戏的极速下载,所有软件都通过人工亲测,安全无忧。",
+                  "id": "web_1766678721218_26n2vr79r",
+                  "name": "联想应用商店",
+                  "tags": [],
+                  "url": "https://lestore.lenovo.com/"
+                },
+                {
+                  "desc": "星愿浏览器（Twinkstar Browser），完美兼容Chrome插件，个性化界面，漫画阅读模式，漫画搜索，购物搜索，全网比价，视频下载，视频弹窗，鼠标手势，超级拖拽，多线程高速下载等等，是一款方便，可靠，简洁的浏览器",
+                  "id": "web_1766678781922_eqptd7gdp",
+                  "name": "星愿浏览器 - 大学生都爱用的浏览器 [官方网站]",
+                  "tags": [],
+                  "url": "https://www.twinkstar.com/"
+                },
+                {
+                  "desc": "夸克pc/app为你带来极速、智能、安全、高效的搜索体验,找答案,找资料,找工具,办公,学习,工作必备应用。夸克提供浏览器搜索引擎、网盘、AI扫描王工具及小说阅读等高效功能，为你提供稳定,安全,流畅的浏览环境和优质的产品服务体验",
+                  "id": "web_1766678800724_k8kvh637d",
+                  "name": "夸克_阿里AI旗舰应用官网",
+                  "tags": [],
+                  "url": "https://www.quark.cn/"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766679481281_a2crctrec",
+              "name": "测试",
+              "websites": [
+                {
+                  "desc": "动漫花园为您免费提供最新的动漫番剧哦~专注于动漫卡通资源收集整理，海量无修动漫卡通资源免费在线观看下载。",
+                  "id": "web_1766679484779_9vs9tx25l",
+                  "name": "动漫花园-一个免费分享动漫的网站",
+                  "tags": [],
+                  "url": "https://www.699dm.com/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766679595509_bsir6aduz",
+                  "name": "智谱清言",
+                  "tags": [
+                    "撒旦阿斯顿阿斯",
+                    "你好啊"
+                  ],
+                  "url": "https://chatglm.cn/main/alltoolsdetail?fr=mkazb06&lang=zh"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766681081470_inmyxb8nu",
+                  "name": "扩展程序",
+                  "tags": [],
+                  "url": "chrome://extensions/"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "icon": "fas fa-folder",
+          "id": "daily",
+          "name": "日常办公",
+          "subCategories": [
+            {
+              "icon": "fas fa-folder",
+              "id": "office",
+              "name": "Office 在线",
+              "websites": [
+                {
+                  "desc": "在线文档编辑工具",
+                  "id": "1",
+                  "name": "Google Docs",
+                  "tags": [
+                    "文档",
+                    "在线",
+                    "办公"
+                  ],
+                  "url": "https://docs.google.com"
+                },
+                {
+                  "desc": "微软办公套件",
+                  "id": "2",
+                  "name": "Microsoft 365",
+                  "tags": [
+                    "办公",
+                    "套件",
+                    "云服务"
+                  ],
+                  "url": "https://office.com"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "cloud",
+              "name": "云盘存储",
+              "websites": [
+                {
+                  "desc": "大容量云存储服务",
+                  "id": "4",
+                  "name": "百度网盘",
+                  "tags": [
+                    "云存储",
+                    "百度",
+                    "大容量"
+                  ],
+                  "url": "https://pan.baidu.com"
+                },
+                {
+                  "desc": "阿里云旗下云存储",
+                  "id": "5",
+                  "name": "阿里云盘",
+                  "tags": [
+                    "云存储",
+                    "阿里",
+                    "高速"
+                  ],
+                  "url": "https://www.aliyundrive.com"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766644613692_elfpvd224",
+                  "name": "百度一下，你就知道",
+                  "tags": [],
+                  "url": "https://www.baidu.com/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766644821116_onvdmg51k",
+                  "name": "扩展程序",
+                  "tags": [
+                    "wo"
+                  ],
+                  "url": "chrome://extensions/"
+                },
+                {
+                  "desc": "",
+                  "id": "web_1766668050638_v30u7qt9n",
+                  "name": "扩展程序",
+                  "tags": [],
+                  "url": "chrome://extensions/"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766648532277_idys1z2be",
+              "name": "你的电脑",
+              "websites": [
+                {
+                  "desc": "",
+                  "id": "web_1766654002225_9uno5q9k3",
+                  "name": "百度一下，你就知道",
+                  "tags": [],
+                  "url": "https://www.baidu.com/"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "icon": "fas fa-folder",
+          "id": "entertainment",
+          "name": "娱乐休闲",
+          "subCategories": [
+            {
+              "id": "video",
+              "name": "视频平台",
+              "websites": [
+                {
+                  "desc": "哔哩哔哩弹幕视频",
+                  "id": "6",
+                  "name": "B站",
+                  "tags": [
+                    "视频",
+                    "弹幕",
+                    "年轻"
+                  ],
+                  "url": "https://www.bilibili.com"
+                },
+                {
+                  "desc": "优酷视频",
+                  "id": "7",
+                  "name": "优酷",
+                  "tags": [
+                    "视频",
+                    "剧集",
+                    "综艺"
+                  ],
+                  "url": "https://www.youku.com"
+                }
+              ]
+            },
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766659891762_ef99vf5fd",
+              "name": "233",
+              "websites": []
+            }
+          ]
+        },
+        {
+          "icon": "fas fa-folder",
+          "id": "cat_1766648442120_9z9wej4lv",
+          "name": "云上开悟",
+          "subCategories": [
+            {
+              "id": "sub_1766648528011_4xydrhhj4",
+              "name": "6",
+              "websites": [
+                {
+                  "desc": "",
+                  "id": "web_1766650184264_j72zhygzn",
+                  "name": "百度一下，你就知道",
+                  "tags": [],
+                  "url": "https://www.baidu.com/"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "icon": "fas fa-search",
+          "id": "cat_1766680032346_ar7734uql",
+          "name": "6",
+          "subCategories": [
+            {
+              "icon": "fas fa-folder",
+              "id": "sub_1766680032346_bjj1gjw2p",
+              "name": "未命名分类",
+              "websites": [
+                {
+                  "desc": "百度搜索",
+                  "id": "web_1766680032346_lml0nerww",
+                  "name": "百度",
+                  "tags": [
+                    "搜索",
+                    "百度"
+                  ],
+                  "url": "https://www.baidu.com"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "icon": "fas fa-compass",
+      "id": "general",
+      "name": "综合导航"
+    },
+    {
+      "categories": [
+        {
+          "id": "ai_tools",
+          "name": "AI工具",
+          "subCategories": [
+            {
+              "id": "chat",
+              "name": "AI聊天",
+              "websites": [
+                {
+                  "desc": "OpenAI聊天机器人",
+                  "id": "8",
+                  "name": "ChatGPT",
+                  "tags": [
+                    "AI",
+                    "聊天",
+                    "OpenAI"
+                  ],
+                  "url": "https://chat.openai.com"
+                },
+                {
+                  "desc": "百度文心一言",
+                  "id": "9",
+                  "name": "文心一言",
+                  "tags": [
+                    "AI",
+                    "聊天",
+                    "百度"
+                  ],
+                  "url": "https://yiyan.baidu.com"
+                }
+              ]
+            },
+            {
+              "id": "image",
+              "name": "AI绘画",
+              "websites": [
+                {
+                  "desc": "AI绘画工具",
+                  "id": "10",
+                  "name": "MidJourney",
+                  "tags": [
+                    "AI",
+                    "绘画",
+                    "图像"
+                  ],
+                  "url": "https://www.midjourney.com"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "icon": "fas fa-robot",
+      "id": "ai",
+      "name": "AI类导航"
+    }
+  ]
+}
