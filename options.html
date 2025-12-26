@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>速导航 - 设置</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/options.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="title">
+                <i class="fas fa-compass"></i>
+                速导航 - 设置
+            </h1>
+        </header>
+
+        <!-- 标签页导航 -->
+        <nav class="tabs-nav">
+            <button class="tab-btn active" data-tab="categories">分类管理</button>
+            <button class="tab-btn" data-tab="data">数据管理</button>
+            <button class="tab-btn" data-tab="about">关于</button>
+        </nav>
+
+        <main class="main-content">
+            <!-- 分类管理标签页 -->
+            <div class="tab-content active" id="categories-tab">
+                <!-- 创建主类导航 -->
+                <div class="card">
+                    <h3 class="card-title">创建主类导航</h3>
+                    <div class="card-content">
+                        <div class="form-group">
+                            <label for="mainCategoryName">主类名称</label>
+                            <input type="text" id="mainCategoryName" class="form-input" placeholder="输入主类名称">
+                        </div>
+                        <div class="form-group">
+                            <label>选择图标</label>
+                            <div class="icon-selector" id="mainCategoryIconSelector"></div>
+                            <input type="hidden" id="mainCategoryIcon" name="mainCategoryIcon" value="fas fa-compass">
+                            <small class="form-hint">选择一个图标作为主类导航图标</small>
+                        </div>
+                        <button class="btn btn-primary" id="createMainCategoryBtn">创建主类导航</button>
+                    </div>
+                </div>
+
+                <!-- 主类导航列表 -->
+                <div class="card">
+                    <h3 class="card-title">主类导航列表</h3>
+                    <div class="card-content">
+                        <div id="mainCategoriesList" class="categories-list"></div>
+                    </div>
+                </div>
+
+                <!-- 一级分类管理 -->
+                <div class="card">
+                    <h3 class="card-title">一级分类管理</h3>
+                    <div class="card-content">
+                        <div id="categoriesList" class="categories-list"></div>
+                    </div>
+                </div>
+
+                <!-- 二级分类管理 -->
+                <div class="card">
+                    <h3 class="card-title">二级分类管理</h3>
+                    <div class="card-content">
+                        <div id="subcategoriesList" class="categories-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据管理标签页 -->
+            <div class="tab-content" id="data-tab">
+                <!-- 数据导出 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-download"></i>
+                        导出数据
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description">将当前导航数据导出为JSON文件，用于备份或迁移到其他浏览器。</p>
+                        <button class="btn btn-primary" id="exportBtn">
+                            <i class="fas fa-file-export"></i>
+                            导出数据
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 数据导入 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-upload"></i>
+                        导入数据
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description">从JSON文件导入导航数据，替换当前所有数据。</p>
+                        <div class="import-section">
+                            <input type="file" id="importFile" accept=".json" class="import-file-input">
+                            <label for="importFile" class="btn btn-secondary">
+                                <i class="fas fa-file-import"></i>
+                                选择文件
+                            </label>
+                            <button class="btn btn-primary" id="importBtn" disabled>
+                                <i class="fas fa-upload"></i>
+                                导入
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 图标获取配置 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-image"></i>
+                        图标获取配置
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description">配置获取网站图标的方式，优先级：1. 主API 2. 备选API 3. Google服务 4. 默认小地球图标</p>
+                        
+                        <!-- API配置 -->
+                        <div class="form-group">
+                            <label for="faviconApiInput">主图标API地址</label>
+                            <input type="text" id="faviconApiInput" class="form-input" placeholder="输入主图标API地址，例如：https://icon.bqb.cool?url=">
+                            <small class="form-hint">优先使用此API获取图标</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="faviconApiBackupInput">备选图标API地址</label>
+                            <input type="text" id="faviconApiBackupInput" class="form-input" placeholder="输入备选图标API地址，例如：https://icon.bqb.cool?url=">
+                            <small class="form-hint">当主API不可用时，会使用此备选API获取图标</small>
+                        </div>
+                        
+                        <!-- API超时配置 -->
+                        <div class="form-group">
+                            <label for="apiTimeoutInput">API请求超时时间（毫秒）</label>
+                            <input type="number" id="apiTimeoutInput" class="form-input" placeholder="输入超时时间，默认5000毫秒" min="1000" max="30000" step="1000" value="5000">
+                            <small class="form-hint">API请求的最大等待时间，超过此时间会尝试下一个API</small>
+                        </div>
+                        
+                        <!-- 默认图标类型 -->
+                        <div class="form-group">
+                            <label>默认图标类型</label>
+                            <div class="radio-group">
+                                <label class="radio-item">
+                                    <input type="radio" name="defaultIconType" value="globe" checked>
+                                    <span class="radio-label">小地球图标</span>
+                                    <small class="radio-hint">使用默认的小地球图标</small>
+                                </label>
+                                <label class="radio-item">
+                                    <input type="radio" name="defaultIconType" value="text">
+                                    <span class="radio-label">文字图标</span>
+                                    <small class="radio-hint">使用网站名称的首字母作为图标</small>
+                                </label>
+                            </div>
+                            <small class="form-hint">当无法获取到网站图标时，会使用此默认图标类型</small>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="saveFaviconApiBtn">保存配置</button>
+                    </div>
+                </div>
+
+                <!-- 云备份功能 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-cloud"></i>
+                        云备份管理
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description">通过WebDAV备份和恢复导航数据</p>
+                        
+                        <!-- WebDAV配置 -->
+                        <div class="form-group">
+                            <label>WebDAV服务器配置</label>
+                            <div class="webdav-config-grid">
+                                <div class="form-group">
+                                    <label for="webdavHost">服务器地址</label>
+                                    <input type="text" id="webdavHost" class="form-input" placeholder="例如：example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label for="webdavPort">端口</label>
+                                    <input type="number" id="webdavPort" class="form-input" placeholder="443" min="1" max="65535" value="443">
+                                </div>
+                                <div class="form-group">
+                                    <label for="webdavPath">路径</label>
+                                    <input type="text" id="webdavPath" class="form-input" placeholder="/dav" value="/dav">
+                                </div>
+                            </div>
+                            <small class="form-hint">WebDAV服务器的地址、端口和路径配置</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="webdavUsername">用户名</label>
+                            <input type="text" id="webdavUsername" class="form-input" placeholder="输入WebDAV用户名">
+                            <small class="form-hint">WebDAV服务器的用户名</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="webdavPassword">密码</label>
+                            <input type="password" id="webdavPassword" class="form-input" placeholder="输入WebDAV密码">
+                            <small class="form-hint">WebDAV服务器的密码</small>
+                        </div>
+                        
+                        <!-- 备份配置 -->
+                        <div class="form-group">
+                            <label>备份配置</label>
+                            <div class="backup-config">
+                                <div class="form-group-inline">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="autoBackupEnabled">
+                                        <span>启用自动备份</span>
+                                    </label>
+                                    <select id="autoBackupInterval" class="form-select">
+                                        <option value="daily">每日备份</option>
+                                        <option value="weekly">每周备份</option>
+                                        <option value="monthly">每月备份</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="backupTime">备份时间（小时）</label>
+                                    <input type="number" id="backupTime" class="form-input" min="0" max="23" value="0">
+                                    <small class="form-hint">设置自动备份的时间，默认是凌晨0点</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 备份操作 -->
+                        <div class="form-actions">
+                            <button class="btn btn-primary" id="saveWebdavConfig">保存配置</button>
+                            <button class="btn btn-secondary" id="manualBackupBtn">手动备份</button>
+                            <button class="btn btn-secondary" id="restoreBackupBtn">恢复数据</button>
+                            <button class="btn btn-danger" id="testWebdavConnection">测试连接</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 重置数据 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-redo"></i>
+                        重置数据
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description text-warning">将数据重置为默认值，此操作不可恢复。</p>
+                        <button class="btn btn-danger" id="resetBtn">
+                            <i class="fas fa-trash"></i>
+                            重置为默认数据
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 关于标签页 -->
+            <div class="tab-content" id="about-tab">
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-info-circle"></i>
+                        插件信息
+                    </h3>
+                    <div class="card-content">
+                        <div class="info-item">
+                            <span class="info-label">名称：</span>
+                            <span class="info-value">速导航浏览器插件</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">版本：</span>
+                            <span class="info-value">1.0.0</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">描述：</span>
+                            <span class="info-value">功能完整的网址导航浏览器插件，支持自定义分类和数据导入导出。</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 模态框 -->
+        <div id="modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle" class="modal-title">操作确认</h3>
+                    <button id="closeModal" class="modal-close">&times;</button>
+                </div>
+                <div id="modalBody" class="modal-body">
+                    <p id="modalMessage">确认执行此操作吗？</p>
+                    <div id="countdown" class="countdown" style="display: none;">
+                        <span id="countdownText">5</span>秒后自动执行...
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancelBtn" class="btn btn-secondary">取消</button>
+                    <button id="confirmBtn" class="btn btn-primary">确认</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 消息提示容器 -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script type="module" src="js/options.js"></script>
+</body>
+</html>

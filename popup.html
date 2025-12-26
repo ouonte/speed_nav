@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>速导航</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/popup.css">
+</head>
+<body style="width: 800px; height: 600px; margin: 0; padding: 0; overflow: hidden;">
+    <div class="app-container">
+        <!-- 顶部导航栏 -->
+        <header class="app-header">
+            <div class="header-inner">
+                <h1 class="app-title">
+                    <i class="fas fa-compass"></i>
+                    速导航
+                </h1>
+                <div class="header-actions">
+                    <div class="search-container">
+                        <input type="text" id="searchInput" class="search-input" placeholder="搜索分类和网址..." autocomplete="off">
+                        <div id="searchSuggestions" class="search-suggestions"></div>
+                    </div>
+                    <div class="main-category-selector">
+                        <select id="mainCategorySelect" class="main-category-select">
+                            <!-- 动态生成主类选项 -->
+                        </select>
+                    </div>
+                    <button class="action-btn settings-btn" id="settingsBtn" title="设置">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主内容区域 -->
+        <main class="app-main">
+            <!-- 导航层级 -->
+            <div class="nav-layers">
+                <!-- 一级导航 -->
+                <nav class="nav-layer nav-layer-primary" id="categoryNav">
+                    <div class="nav-header">
+                        <h3 class="nav-title"></h3>
+                    </div>
+                    <ul class="nav-list nav-list-primary">
+                        <!-- 动态生成一级导航 -->
+                        <li class="nav-item nav-item-add">
+                            <button id="addCategoryBtn" class="btn btn-add" title="添加一级分类">
+                                <i class="fas fa-plus"></i>
+                                新增
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+
+                <!-- 二级导航 -->
+                <nav class="nav-layer nav-layer-secondary" id="subcategoryTabs">
+                    <div class="nav-header">
+                        <h3 class="nav-title"></h3>
+                    </div>
+                    <ul class="nav-list nav-list-secondary">
+                        <!-- 动态生成二级分类标签 -->
+                        <li class="nav-item nav-item-add">
+                            <button id="addSubcategoryBtn" class="btn btn-add" title="添加二级分类">
+                                <i class="fas fa-plus"></i>
+                                新增
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+
+            <!-- 内容展示区 -->
+            <div class="content-display">
+                <!-- 内容操作区 -->
+                <div class="content-actions">
+                    <button id="addWebsiteBtn" class="btn btn-primary add-website-btn" title="添加当前网址">
+                        <i class="fas fa-plus"></i>
+                        新增网址
+                    </button>
+                </div>
+                <!-- 网站列表 -->
+                <div class="website-grid" id="websiteList">
+                    <!-- 动态生成网站卡片 -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="js/popup.js"></script>
+</body>
+</html>
