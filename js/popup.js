@@ -1,51 +1,10 @@
 // 弹出页面主脚本 - 组件化重构
-import { DataManager } from './dataManager.js';
+import { DataManager, BrowserAPI } from './dataManager.js';
+import { DatabaseManager } from './db.js';
+import { IconManager, iconManager } from './iconManager.js';
 
-// 浏览器API兼容层 - 统一Promise接口
-const browserAPI = {
-    tabs: {
-        query: (options) => {
-            return new Promise((resolve) => {
-                if (typeof chrome !== 'undefined' && chrome.tabs) {
-                    chrome.tabs.query(options, (result) => {
-                        resolve(result);
-                    });
-                } else if (typeof browser !== 'undefined' && browser.tabs) {
-                    browser.tabs.query(options).then(resolve);
-                } else {
-                    resolve([]);
-                }
-            });
-        },
-        create: (options) => {
-            return new Promise((resolve) => {
-                if (typeof chrome !== 'undefined' && chrome.tabs) {
-                    chrome.tabs.create(options, (tab) => {
-                        resolve(tab);
-                    });
-                } else if (typeof browser !== 'undefined' && browser.tabs) {
-                    browser.tabs.create(options).then(resolve);
-                } else {
-                    resolve(null);
-                }
-            });
-        }
-    },
-    runtime: {
-        openOptionsPage: () => {
-            return new Promise((resolve) => {
-                if (typeof chrome !== 'undefined' && chrome.runtime) {
-                    chrome.runtime.openOptionsPage(resolve);
-                } else if (typeof browser !== 'undefined' && browser.runtime) {
-                    browser.runtime.openOptionsPage().then(resolve);
-                } else {
-                    resolve();
-                }
-            });
-        }
-    },
-    storage: typeof chrome !== 'undefined' ? chrome.storage : (browser && browser.storage ? browser.storage : null)
-};
+// 使用DataManager中已有的BrowserAPI类，避免代码重复
+// 这里只需要确保DataManager.js已经正确导出BrowserAPI类
 
 // HTML转义函数
 function escapeHtml(text) {
@@ -57,7 +16,20 @@ function escapeHtml(text) {
 // 内存缓存，用于缓存已获取的图标，减少对localStorage的访问
 let faviconMemoryCache = new Map();
 
-// 获取网站图标URL - 主选通过官网链接加上/favicon.ico，备用使用API，默认使用小网络地球图标
+// 图标缓存配置
+const FAVICON_CACHE_CONFIG = {
+  MEMORY_TTL: 24 * 60 * 60 * 1000, // 内存缓存24小时
+  LOCAL_STORAGE_TTL: 7 * 24 * 60 * 60 * 1000, // 本地存储缓存7天
+  MAX_RETRIES: 1, // 重试次数
+  TIMEOUTS: {
+    LOCAL: 2000, // 本地favicon.ico超时2秒
+    HTML: 3000, // HTML提取超时3秒
+    API: 4000, // API请求超时4秒
+    GOOGLE: 3000 // Google服务超时3秒
+  }
+};
+
+// 获取网站图标URL - 优化版本，提高性能和可靠性
 async function getFaviconUrl(url) {
     try {
         if (!url) {
@@ -82,16 +54,29 @@ async function getFaviconUrl(url) {
             const cached = faviconMemoryCache.get(cacheKey);
             const now = Date.now();
             if (now < cached.expires) {
-                console.log('从内存缓存获取favicon:', url, '→', cached.url);
                 return cached.url;
             } else {
                 // 内存缓存已过期，删除它
                 faviconMemoryCache.delete(cacheKey);
-                console.log('内存缓存已过期，删除它:', url);
             }
         }
         
-        // 2. 检查localStorage缓存
+        // 2. 检查数据库缓存
+        const dbCachedFavicon = await DatabaseManager.getFavicon(cleanUrl);
+        if (dbCachedFavicon) {
+            // 同时更新到内存缓存和localStorage
+            const now = Date.now();
+            const memoryExpires = now + FAVICON_CACHE_CONFIG.MEMORY_TTL;
+            const localStorageExpires = now + FAVICON_CACHE_CONFIG.LOCAL_STORAGE_TTL;
+            
+            faviconMemoryCache.set(cacheKey, { url: dbCachedFavicon, expires: memoryExpires });
+            localStorage.setItem(cacheKey, dbCachedFavicon);
+            localStorage.setItem(`${cacheKey}_expires`, localStorageExpires.toString());
+            
+            return dbCachedFavicon;
+        }
+        
+        // 3. 检查localStorage缓存
         const cachedFavicon = localStorage.getItem(cacheKey);
         const cachedExpires = localStorage.getItem(`${cacheKey}_expires`);
         
@@ -99,15 +84,15 @@ async function getFaviconUrl(url) {
             const now = Date.now();
             const expires = parseInt(cachedExpires);
             if (now < expires) {
-                console.log('从localStorage获取favicon:', url, '→', cachedFavicon);
-                // 同时更新到内存缓存
-                faviconMemoryCache.set(cacheKey, { url: cachedFavicon, expires });
+                // 同时更新到内存缓存和数据库缓存
+                faviconMemoryCache.set(cacheKey, { url: cachedFavicon, expires: now + FAVICON_CACHE_CONFIG.MEMORY_TTL });
+                await DatabaseManager.saveFavicon(cleanUrl, cachedFavicon);
+                
                 return cachedFavicon;
             } else {
                 // 缓存已过期，删除它
                 localStorage.removeItem(cacheKey);
                 localStorage.removeItem(`${cacheKey}_expires`);
-                console.log('localStorage缓存已过期，删除它:', url);
             }
         }
         
@@ -204,12 +189,12 @@ async function getFaviconUrl(url) {
         const urlObj = new URL(cleanUrl);
         const domain = urlObj.hostname;
         const protocol = urlObj.protocol;
-        const data = await DataManager.getAllData();
         
-        // 获取配置
-        const faviconApi = data.config?.faviconApi || 'https://icon.bqb.cool?url=';
-        const faviconApiBackup = data.config?.faviconApiBackup || 'https://icon.bqb.cool?url=';
-        const apiTimeout = data.config?.apiTimeout || 5000;
+        // 从全局配置中获取，避免重复调用DataManager.getAllData()
+        // 这些配置应该在插件初始化时已经加载到全局变量中
+        const faviconApi = window.faviconConfig?.faviconApi || 'https://icon.bqb.cool?url=';
+        const faviconApiBackup = window.faviconConfig?.faviconApiBackup || 'https://icon.bqb.cool?url=';
+        const apiTimeout = window.faviconConfig?.apiTimeout || 5000;
         
         // 构建所有可能的图标获取方法，按照优先级排序
         const iconMethods = [];
@@ -297,6 +282,9 @@ async function getFaviconUrl(url) {
             localStorage.setItem(cacheKey, finalUrl);
             localStorage.setItem(`${cacheKey}_expires`, expires.toString());
             
+            // 保存到数据库缓存
+            await DatabaseManager.saveFavicon(cleanUrl, finalUrl);
+            
             return finalUrl;
         } else {
             // 所有方法都失败，返回空字符串，让浏览器显示默认图标
@@ -317,14 +305,18 @@ function addDefaultIconStyles() {
         style.id = 'default-icon-styles';
         style.textContent = `
             .website-icon {
-                width: 48px;
-                height: 48px;
-                display: flex;
+                width: auto;
+                height: auto;
+                display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                margin-bottom: 8px;
-                border-radius: 8px;
-                background-color: var(--bg-secondary);
+                margin-right: 8px;
+                flex-shrink: 0;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+                /* 移除背景色，使用透明背景 */
+                background-color: transparent;
             }
             .website-icon i {
                 font-size: 24px; /* 控制错误图标的大小 */
@@ -336,20 +328,24 @@ function addDefaultIconStyles() {
                 justify-content: center;
             }
             .website-icon img {
-                width: 32px;
-                height: 32px;
+                width: 24px;
+                height: 24px;
                 object-fit: contain;
                 border-radius: 4px;
+                transition: transform 0.2s ease;
             }
             .website-icon .text-icon {
-                font-size: 24px;
-                font-weight: bold;
+                font-size: 12px;
+                font-weight: var(--font-weight-semibold);
                 color: var(--text-primary);
-                width: 100%;
-                height: 100%;
+                line-height: 1;
+                width: 24px;
+                height: 24px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                border: none;
+                border-radius: 4px;
             }
         `;
         document.head.appendChild(style);
@@ -406,11 +402,9 @@ class Toast {
                 color: white;
                 border-radius: 8px;
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                animation: slideInRight 0.3s ease;
                 font-size: 14px;
                 font-weight: 500;
                 opacity: 1;
-                transition: all 0.3s ease;
             }
             
             .toast.error {
@@ -449,37 +443,14 @@ class Toast {
                 padding: 4px 8px;
                 font-size: 12px;
                 cursor: pointer;
-                transition: all 0.2s ease;
             }
             
             .toast-undo-btn:hover {
                 background: rgba(255, 255, 255, 0.3);
             }
             
-            @keyframes slideInRight {
-                from {
-                    transform: translateX(100%);
-                    opacity: 0;
-                }
-                to {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
-            }
-            
-            @keyframes fadeOut {
-                from {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
-                to {
-                    opacity: 0;
-                    transform: translateX(100%);
-                }
-            }
-            
             .toast.hide {
-                animation: fadeOut 0.3s ease;
+                display: none;
             }
         `;
         document.head.appendChild(style);
@@ -609,15 +580,10 @@ class Toast {
             this.activeToasts.delete(toastId);
         }
         
-        // 隐藏元素
+        // 隐藏并移除元素
         const toastElement = toastInfo.element;
-        toastElement.classList.add('hide');
-        
-        // 移除元素
-        setTimeout(() => {
-            toastElement.remove();
-            this.toastElements.delete(toastId);
-        }, 300);
+        toastElement.remove();
+        this.toastElements.delete(toastId);
     }
 }
 
@@ -677,7 +643,6 @@ class ContextMenu {
                 gap: 8px;
                 padding: 10px 16px;
                 cursor: pointer;
-                transition: background-color var(--transition-fast);
                 font-size: var(--font-size-sm);
             }
             
@@ -795,18 +760,27 @@ class WebsiteCard {
         // 生成网站详情
         const websiteDetail = this.website.detail || '';
         
-        // 生成默认图标
-        const defaultIconHtml = this.getDefaultIconHtml();
+        // 使用默认图标初始化
+        const iconHtml = this.getDefaultIconHtml();
         
-        // 先创建带有默认图标的卡片
+        // 创建卡片
         card.innerHTML = `
             <div class="website-icon">
-                ${defaultIconHtml}
+                ${iconHtml}
             </div>
-            <h3 class="website-name">${escapeHtml(this.website.name)}</h3>
-            <p class="website-desc">${this.website.desc ? escapeHtml(this.website.desc) : ''}</p>
-            ${websiteDetail ? `<p class="website-detail">${escapeHtml(websiteDetail)}</p>` : ''}
-            ${tagsHtml ? `<div class="website-tags">${tagsHtml}</div>` : ''}
+            <div class="website-card-content">
+                <h3 class="website-name">
+                    <i class="fas fa-link website-name-icon"></i>
+                    ${escapeHtml(this.website.name)}
+                </h3>
+                <p class="website-url">${escapeHtml(this.website.url)}</p>
+                <p class="website-desc">
+                    <i class="fas fa-info-circle website-desc-icon"></i>
+                    ${this.website.desc ? escapeHtml(this.website.desc) : ''}
+                </p>
+                ${websiteDetail ? `<p class="website-detail">${escapeHtml(websiteDetail)}</p>` : ''}
+                ${tagsHtml ? `<div class="website-tags">${tagsHtml}</div>` : ''}
+            </div>
         `;
         
         // 添加点击事件
@@ -820,19 +794,64 @@ class WebsiteCard {
             console.log('Right click on website card:', this.website.id);
         });
         
-        // 添加悬停动画
-        card.addEventListener('mouseenter', () => {
-            card.style.transform = 'translateY(-4px) rotateX(2deg)';
-        });
-
-        card.addEventListener('mouseleave', () => {
-            card.style.transform = 'translateY(0) rotateX(0deg)';
-        });
-        
         // 异步获取favicon并更新卡片
         this.updateFavicon(card);
         
         return card;
+    }
+    
+    // 同步检查缓存中的图标
+    getCachedFaviconUrl() {
+        try {
+            let url = this.website.url;
+            
+            // 确保URL有协议头
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = `https://${url}`;
+            }
+            
+            // 移除URL中可能存在的空格和特殊字符
+            const cleanUrl = url.replace(/[`\s]/g, '');
+            
+            // 生成缓存键
+            const cacheKey = `favicon_${btoa(cleanUrl)}`;
+            
+            // 1. 首先检查内存缓存
+            if (faviconMemoryCache.has(cacheKey)) {
+                const cached = faviconMemoryCache.get(cacheKey);
+                const now = Date.now();
+                if (now < cached.expires) {
+                    return cached.url;
+                } else {
+                    // 内存缓存已过期，删除它
+                    faviconMemoryCache.delete(cacheKey);
+                }
+            }
+            
+            // 2. 检查localStorage缓存
+            const cachedFavicon = localStorage.getItem(cacheKey);
+            const cachedExpires = localStorage.getItem(`${cacheKey}_expires`);
+            
+            if (cachedFavicon && cachedExpires) {
+                const now = Date.now();
+                const expires = parseInt(cachedExpires);
+                if (now < expires) {
+                    // 同时更新到内存缓存
+                    faviconMemoryCache.set(cacheKey, { url: cachedFavicon, expires: now + FAVICON_CACHE_CONFIG.MEMORY_TTL });
+                    return cachedFavicon;
+                } else {
+                    // 缓存已过期，删除它
+                    localStorage.removeItem(cacheKey);
+                    localStorage.removeItem(`${cacheKey}_expires`);
+                }
+            }
+            
+            // 没有缓存，返回null
+            return null;
+        } catch (error) {
+            console.error('获取缓存favicon失败:', this.website.url, error.message);
+            return null;
+        }
     }
     
     getDefaultIconHtml() {
@@ -850,10 +869,13 @@ class WebsiteCard {
     
     async updateFavicon(card) {
         try {
-            const faviconUrl = await getFaviconUrl(this.website.url);
             const websiteIcon = card.querySelector('.website-icon');
-            if (websiteIcon && faviconUrl) {
-                websiteIcon.innerHTML = `<img src="${faviconUrl}" alt="${escapeHtml(this.website.name)} logo" loading="lazy">`;
+            if (websiteIcon) {
+                // 使用getFaviconHtml方法，先返回默认图标，然后异步更新，不会阻塞界面渲染
+                const iconHtml = await iconManager.getFaviconHtml(this.website.url, this.website.name, {
+                    defaultIconType: this.defaultIconType
+                });
+                websiteIcon.innerHTML = iconHtml;
             }
         } catch (error) {
             console.error('更新favicon失败:', error);
@@ -880,10 +902,13 @@ class PopupApp {
         });
         
         // 全局状态
-        this.currentData = null;
-        this.currentMainCategory = null;
-        this.currentCategory = null;
-        this.currentSubCategory = null;
+    this.currentData = null;
+    this.currentMainCategory = null;
+    this.currentCategory = null;
+    this.currentSubCategory = null;
+    
+    // 用户状态保存键名
+    this.userStateKey = 'cloudhut_user_state';
         
         // DOM元素
         this.mainCategorySelect = document.getElementById('mainCategorySelect');
@@ -900,27 +925,112 @@ class PopupApp {
         this.addSubcategoryBtn = document.getElementById('addSubcategoryBtn');
         
         // 初始化应用
-        this.init();
-    }
+    this.init();
+  }
 
-    async init() {
-        // 加载数据 - 每次打开扩展都加载最新数据
-        await this.loadData();
-        
-        // 添加默认图标样式
-        addDefaultIconStyles();
-        
-        // 渲染主类导航
-        this.renderMainNav();
-        
-        // 设置事件监听
-        this.bindEvents();
+  /**
+   * 保存用户浏览状态
+   */
+  saveUserState() {
+    try {
+      const userState = {
+        mainCategoryId: this.currentMainCategory?.id || '',
+        categoryId: this.currentCategory?.id || '',
+        subCategoryId: this.currentSubCategory?.id || '',
+        timestamp: Date.now()
+      };
+      
+      localStorage.setItem(this.userStateKey, JSON.stringify(userState));
+      console.log('用户状态已保存:', userState);
+    } catch (error) {
+      console.error('保存用户状态失败:', error);
     }
+  }
+
+  /**
+   * 恢复用户浏览状态
+   */
+  restoreUserState() {
+    try {
+      const userStateStr = localStorage.getItem(this.userStateKey);
+      if (!userStateStr) {
+        console.log('没有找到用户状态，使用默认值');
+        return false;
+      }
+      
+      const userState = JSON.parse(userStateStr);
+      console.log('找到用户状态:', userState);
+      
+      // 检查数据是否有效且时间不超过30天
+      const now = Date.now();
+      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+      if (userState.timestamp && now - userState.timestamp > thirtyDays) {
+        console.log('用户状态已过期，使用默认值');
+        return false;
+      }
+      
+      // 恢复主类导航
+      if (userState.mainCategoryId && this.currentData.mainCategories) {
+        const mainCategory = this.currentData.mainCategories.find(mc => mc.id === userState.mainCategoryId);
+        if (mainCategory) {
+          this.selectMainCategory(mainCategory);
+          this.mainCategorySelect.value = mainCategory.id;
+          
+          // 恢复一级分类
+          if (userState.categoryId && mainCategory.categories) {
+            const category = mainCategory.categories.find(cat => cat.id === userState.categoryId);
+            if (category) {
+              this.selectCategory(category);
+              
+              // 恢复二级分类
+              if (userState.subCategoryId && category.subCategories) {
+                const subCategory = category.subCategories.find(sc => sc.id === userState.subCategoryId);
+                if (subCategory) {
+                  this.selectSubcategory(subCategory);
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      console.log('无法完全恢复用户状态，使用默认值');
+      return false;
+    } catch (error) {
+      console.error('恢复用户状态失败:', error);
+      return false;
+    }
+  }
+
+  async init() {
+    // 加载数据 - 每次打开扩展都加载最新数据
+    await this.loadData();
+    
+    // 添加默认图标样式
+    addDefaultIconStyles();
+    
+    // 渲染主类导航
+    this.renderMainNav();
+    
+    // 设置事件监听
+    this.bindEvents();
+  }
 
     async loadData() {
         try {
             const newData = await DataManager.getAllData();
             this.currentData = newData;
+            
+            // 更新图标管理器配置
+            iconManager.updateConfig({
+                faviconApi: newData.config?.faviconApi || 'https://icon.bqb.cool?url=',
+                faviconApiBackup: newData.config?.faviconApiBackup || 'https://icon.bqb.cool?url=',
+                apiTimeout: newData.config?.apiTimeout || 5000,
+                defaultIconType: newData.config?.defaultIconType || 'globe',
+                useFaviconIco: newData.config?.useFaviconIco !== false,
+                useRegex: newData.config?.useRegex !== false
+            });
             
             // 确保当前选择的分类指向新数据对象
             // 设置当前主类（无论是否已有值）
@@ -964,7 +1074,7 @@ class PopupApp {
         
         // 设置按钮点击事件
         this.settingsBtn.addEventListener('click', () => {
-            browserAPI.runtime.openOptionsPage();
+            BrowserAPI.runtimeOpenOptionsPage();
         });
         
         // 新增网址按钮点击事件
@@ -1254,8 +1364,11 @@ class PopupApp {
         addOption.textContent = '+ 新增主类导航';
         this.mainCategorySelect.appendChild(addOption);
         
-        // 默认选择第一个主类
-        if (this.currentData.mainCategories.length > 0) {
+        // 优先尝试恢复用户上次的浏览状态
+        const restored = this.restoreUserState();
+        
+        // 如果恢复失败，才使用默认值
+        if (!restored && this.currentData.mainCategories.length > 0) {
             this.selectMainCategory(this.currentData.mainCategories[0]);
             // 更新下拉框选中状态
             this.mainCategorySelect.value = this.currentData.mainCategories[0].id;
@@ -1269,6 +1382,9 @@ class PopupApp {
         
         // 渲染一级导航
         this.renderCategoryNav();
+        
+        // 保存用户状态
+        this.saveUserState();
     }
 
     // 处理主类选择变化
@@ -1349,6 +1465,9 @@ class PopupApp {
         
         // 渲染二级分类标签
         this.renderSubcategoryTabs();
+        
+        // 保存用户状态
+        this.saveUserState();
     }
 
     // 渲染二级分类标签
@@ -1410,6 +1529,9 @@ class PopupApp {
         
         // 渲染网站列表
         this.renderWebsiteList();
+        
+        // 保存用户状态
+        this.saveUserState();
     }
 
     // 渲染网站列表
@@ -1431,20 +1553,26 @@ class PopupApp {
         // 从配置中获取默认图标类型
         const defaultIconType = this.currentData?.config?.defaultIconType || 'globe';
         
+        // 使用DocumentFragment优化DOM操作
+        const fragment = document.createDocumentFragment();
+        
         // 渲染网站卡片
         this.currentSubCategory.websites.forEach(website => {
             const websiteCard = new WebsiteCard(website, (clickedWebsite) => {
                 // 确保URL存在且有效
                 if (clickedWebsite && clickedWebsite.url) {
                     console.log('Opening website:', clickedWebsite.url);
-                    browserAPI.tabs.create({ url: clickedWebsite.url, active: true });
+                    BrowserAPI.tabsCreate({ url: clickedWebsite.url, active: true });
                 } else {
                     console.error('Invalid website URL:', clickedWebsite);
                     this.toast.show('网站URL无效', 'error');
                 }
             }, defaultIconType);
-            this.websiteList.appendChild(websiteCard.getElement());
+            fragment.appendChild(websiteCard.getElement());
         });
+        
+        // 一次性添加所有卡片到DOM
+        this.websiteList.appendChild(fragment);
         
         // 移除动画类以便下次使用
         setTimeout(() => {
@@ -2421,7 +2549,12 @@ class PopupApp {
     // 更新一级分类
     async updateCategory(categoryId, name, icon) {
         try {
-            const data = await DataManager.getAllData();
+            // 使用当前缓存的数据，避免重复调用DataManager.getAllData()
+            let data = this.currentData;
+            if (!data) {
+                data = await DataManager.getAllData();
+            }
+            
             let categoryFound = false;
             
             // 查找并更新分类
@@ -2446,6 +2579,8 @@ class PopupApp {
             // 保存数据
             const saved = await DataManager.saveAllData(data);
             if (saved) {
+                // 更新成功后，清除当前缓存，确保下次获取最新数据
+                this.currentData = null;
                 return { success: true, message: '分类更新成功' };
             } else {
                 return { success: false, message: '保存失败' };
@@ -2459,7 +2594,12 @@ class PopupApp {
     // 更新二级分类
     async updateSubcategory(subcategoryId, name, icon) {
         try {
-            const data = await DataManager.getAllData();
+            // 使用当前缓存的数据，避免重复调用DataManager.getAllData()
+            let data = this.currentData;
+            if (!data) {
+                data = await DataManager.getAllData();
+            }
+            
             let subcategoryFound = false;
             
             // 查找并更新子分类
@@ -2487,6 +2627,8 @@ class PopupApp {
             // 保存数据
             const saved = await DataManager.saveAllData(data);
             if (saved) {
+                // 更新成功后，清除当前缓存，确保下次获取最新数据
+                this.currentData = null;
                 return { success: true, message: '子分类更新成功' };
             } else {
                 return { success: false, message: '保存失败' };
@@ -2577,12 +2719,18 @@ class PopupApp {
         // 从配置中获取默认图标类型
         const defaultIconType = this.currentData?.config?.defaultIconType || 'globe';
         
+        // 使用DocumentFragment优化DOM操作
+        const fragment = document.createDocumentFragment();
+        
         results.forEach(result => {
             const card = new WebsiteCard(result, (website) => {
                 this.visitWebsite(website.id);
             }, defaultIconType);
-            this.websiteList.appendChild(card.getElement());
+            fragment.appendChild(card.getElement());
         });
+        
+        // 一次性添加所有卡片到DOM
+        this.websiteList.appendChild(fragment);
         
         // 隐藏搜索建议
         this.searchSuggestions.style.display = 'none';
@@ -2603,7 +2751,7 @@ class PopupApp {
     visitWebsite(websiteId) {
         const website = this.findWebsiteById(websiteId);
         if (website) {
-            browserAPI.tabs.create({ url: website.url, active: true });
+            BrowserAPI.tabsCreate({ url: website.url, active: true });
         }
     }
     
@@ -3210,7 +3358,7 @@ class PopupApp {
         
         try {
             // 获取当前活动标签页的URL和标题
-            const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
+            const tabs = await BrowserAPI.tabsQuery({ active: true, currentWindow: true });
             const tab = tabs[0];
             
             if (!tab || !tab.url) {

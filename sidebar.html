@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>速导航侧边栏</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/popup.css">
+    <style>
+        /* 侧边栏特定样式 */
+        body {
+            width: 280px;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--bg-primary);
+        }
+        
+        .app-container {
+            height: 100vh;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 隐藏模式切换按钮，因为这是真正的侧边栏 */
+        .mode-toggle-btn {
+            display: none;
+        }
+        
+        /* 确保主内容区域适应侧边栏高度 */
+        .app-main {
+            height: calc(100vh - var(--header-height));
+            flex-direction: column;
+            display: flex;
+        }
+        
+        /* 侧边栏始终显示，优化样式 */
+        .sidebar {
+            width: 100%;
+            background-color: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+        
+        .nav-layers {
+            display: none;
+        }
+        
+        /* 优化搜索容器 */
+        .search-container {
+            max-width: none;
+            flex: 1;
+        }
+        
+        /* 优化内容展示区 */
+        .content-display {
+            padding: var(--spacing-sm);
+            overflow-y: auto;
+            flex: 1;
+        }
+        
+        /* 优化网站列表 */
+        .website-grid {
+            max-width: 100%;
+            margin: 0;
+        }
+        
+        /* 简化标题 */
+        .app-title {
+            font-size: var(--font-size-lg);
+        }
+        
+        /* 隐藏不需要的元素 */
+        .main-category-selector {
+            display: none;
+        }
+        
+        /* 优化网站卡片 */
+        .website-card {
+            padding: var(--spacing-sm);
+            margin-bottom: var(--spacing-xs);
+        }
+        
+        /* 优化侧边栏部分标题 */
+        .sidebar-section-title {
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-semibold);
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: var(--spacing-xs);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+        }
+        
+        /* 优化侧边栏导航链接 */
+        .sidebar-nav-list a {
+            font-size: var(--font-size-sm);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-sm);
+            transition: all 0.2s ease;
+        }
+        
+        /* 优化侧边栏导航激活状态 */
+        .sidebar-nav-list li.active a {
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        /* 优化侧边栏导航悬停状态 */
+        .sidebar-nav-list a:hover {
+            background-color: var(--primary-light);
+            color: var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航栏 -->
+        <header class="app-header">
+            <div class="header-inner">
+                <h1 class="app-title">
+                    <i class="fas fa-compass"></i>
+                    速导航
+                </h1>
+                <div class="header-actions">
+                    <div class="search-container">
+                        <input type="text" id="searchInput" class="search-input" placeholder="搜索..." autocomplete="off">
+                        <div id="searchSuggestions" class="search-suggestions"></div>
+                    </div>
+                    <button class="action-btn settings-btn" id="settingsBtn" title="设置">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主内容区域 -->
+        <main class="app-main">
+            <!-- 侧边栏导航 -->
+            <aside class="sidebar" id="sidebar">
+                <!-- 主类导航 -->
+                <div class="sidebar-section">
+                    <h3 class="sidebar-section-title"><i class="fas fa-folder"></i> 主类导航</h3>
+                    <ul class="sidebar-nav-list" id="sidebarMainCategories">
+                        <!-- 动态生成主类导航 -->
+                    </ul>
+                </div>
+                
+                <!-- 一级分类导航 -->
+                <div class="sidebar-section" id="sidebarCategoriesSection">
+                    <h3 class="sidebar-section-title"><i class="fas fa-list"></i> 一级分类</h3>
+                    <ul class="sidebar-nav-list" id="sidebarCategories">
+                        <!-- 动态生成一级分类 -->
+                    </ul>
+                </div>
+                
+                <!-- 二级分类导航 -->
+                <div class="sidebar-section" id="sidebarSubcategoriesSection">
+                    <h3 class="sidebar-section-title"><i class="fas fa-tag"></i> 二级分类</h3>
+                    <ul class="sidebar-nav-list" id="sidebarSubcategories">
+                        <!-- 动态生成二级分类 -->
+                    </ul>
+                </div>
+            </aside>
+            
+            <!-- 内容展示区 -->
+            <div class="content-display">
+                <!-- 内容操作区 -->
+                <div class="content-actions">
+                    <button id="addWebsiteBtn" class="btn btn-primary add-website-btn" title="添加当前网址">
+                        <i class="fas fa-plus"></i>
+                        新增网址
+                    </button>
+                </div>
+                <!-- 网站列表 -->
+                <div class="website-grid" id="websiteList">
+                    <!-- 动态生成网站卡片 -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="js/popup.js"></script>
+</body>
+</html>

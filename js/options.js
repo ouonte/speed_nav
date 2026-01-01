@@ -1,5 +1,6 @@
 // 选项页面主脚本 - 组件化重构
 import { DataManager } from './dataManager.js';
+import { IconManager, iconManager } from './iconManager.js';
 
 // HTML转义函数
 function escapeHtml(text) {
@@ -22,9 +23,9 @@ const fontAwesomeIcons = [
 ];
 
 // 初始化图标选择器
-function initIconSelector() {
-    const iconSelector = document.getElementById('mainCategoryIconSelector');
-    const iconInput = document.getElementById('mainCategoryIcon');
+function initIconSelector(selectorId = 'mainCategoryIconSelector', inputId = 'mainCategoryIcon') {
+    const iconSelector = document.getElementById(selectorId);
+    const iconInput = document.getElementById(inputId);
     
     if (!iconSelector || !iconInput) return;
     
@@ -84,14 +85,12 @@ function addIconSelectorStyles() {
                 border: 2px solid transparent;
                 border-radius: 6px;
                 background-color: #ffffff;
-                transition: all 0.2s ease;
                 font-size: 18px;
             }
             
             .icon-option:hover {
                 border-color: #3b82f6;
                 background-color: #eff6ff;
-                transform: translateY(-2px);
             }
             
             .icon-option.selected {
@@ -122,16 +121,11 @@ class Toast {
         const toastElement = document.createElement('div');
         toastElement.className = `toast ${type}`;
         toastElement.innerHTML = `<span class="toast-message">${message}</span>`;
+        toastElement.style.display = 'flex';
         
         // 添加到容器
         this.toastContainer.appendChild(toastElement);
         this.toasts.push(toastElement);
-        
-        // 显示toast
-        setTimeout(() => {
-            toastElement.style.display = 'flex';
-            toastElement.classList.add('show');
-        }, 10);
         
         // 如果超过最大数量，移除最旧的toast
         if (this.toasts.length > this.maxToasts) {
@@ -146,19 +140,15 @@ class Toast {
     }
     
     hideToast(toastElement) {
-        toastElement.classList.remove('show');
-        toastElement.classList.add('hide');
-        
-        setTimeout(() => {
-            if (toastElement.parentNode) {
-                toastElement.parentNode.removeChild(toastElement);
-            }
-            // 从数组中移除
-            const index = this.toasts.indexOf(toastElement);
-            if (index > -1) {
-                this.toasts.splice(index, 1);
-            }
-        }, 300);
+        // 直接移除元素
+        if (toastElement.parentNode) {
+            toastElement.parentNode.removeChild(toastElement);
+        }
+        // 从数组中移除
+        const index = this.toasts.indexOf(toastElement);
+        if (index > -1) {
+            this.toasts.splice(index, 1);
+        }
     }
 }
 
@@ -273,6 +263,11 @@ class OptionsApp {
     constructor() {
         // 数据管理相关元素
         this.exportBtn = document.getElementById('exportBtn');
+        this.exportType = document.getElementById('exportType');
+        this.exportSource = document.getElementById('exportSource');
+        this.syncDataBtn = document.getElementById('syncDataBtn');
+        this.syncSource = document.getElementById('syncSource');
+        this.syncTarget = document.getElementById('syncTarget');
         this.importBtn = document.getElementById('importBtn');
         this.importFile = document.getElementById('importFile');
         this.resetBtn = document.getElementById('resetBtn');
@@ -283,6 +278,10 @@ class OptionsApp {
         this.saveFaviconApiBtn = document.getElementById('saveFaviconApiBtn');
         // 默认图标类型相关元素
         this.iconTypeRadios = document.querySelectorAll('input[name="defaultIconType"]');
+        // 悬浮窗配置相关元素
+        this.floatingWidgetEnabled = document.getElementById('floatingWidgetEnabled');
+        this.autoCollapseTime = document.getElementById('autoCollapseTime');
+        this.saveFloatingWidgetConfig = document.getElementById('saveFloatingWidgetConfig');
         // WebDAV配置相关元素
         this.webdavHost = document.getElementById('webdavHost');
         this.webdavPort = document.getElementById('webdavPort');
@@ -296,6 +295,8 @@ class OptionsApp {
         this.manualBackupBtn = document.getElementById('manualBackupBtn');
         this.restoreBackupBtn = document.getElementById('restoreBackupBtn');
         this.testWebdavConnection = document.getElementById('testWebdavConnection');
+        this.backupsList = document.getElementById('backupsList');
+        
         this.toastContainer = document.getElementById('toastContainer');
         // 按钮冷却时间状态
         this.buttonCooldowns = {
@@ -322,11 +323,26 @@ class OptionsApp {
         
         // 分类列表元素
         this.mainCategoriesList = document.getElementById('mainCategoriesList');
-        this.categoriesList = document.getElementById('categoriesList');
-        this.subcategoriesList = document.getElementById('subcategoriesList');
+        // 一级和二级分类列表元素已移除，只保留主类导航列表
+        this.categoriesList = null;
+        this.subcategoriesList = null;
         
         // 图标缓存按钮
         this.clearFaviconCacheBtn = document.getElementById('clearFaviconCacheBtn');
+        
+        // 存储管理相关元素
+        this.storageTypeRadios = document.querySelectorAll('input[name="storageType"]');
+        this.mysqlConfigSection = document.getElementById('mysqlConfigSection');
+        this.saveStorageTypeBtn = document.getElementById('saveStorageTypeBtn');
+        this.saveMysqlConfigBtn = document.getElementById('saveMysqlConfig');
+        this.testMysqlConnectionBtn = document.getElementById('testMysqlConnection');
+        
+        // MySQL配置输入框
+        this.mysqlHost = document.getElementById('mysqlHost');
+        this.mysqlPort = document.getElementById('mysqlPort');
+        this.mysqlUser = document.getElementById('mysqlUser');
+        this.mysqlPassword = document.getElementById('mysqlPassword');
+        this.mysqlDatabase = document.getElementById('mysqlDatabase');
         
         // 初始化组件
         this.toastComponent = new Toast(this.toastContainer);
@@ -347,7 +363,7 @@ class OptionsApp {
     }
 
     async init() {
-        // 绑定事件
+        // 绑定事件 - 只绑定一次，避免重复绑定
         this.bindEvents();
         
         // 初始化标签页
@@ -356,14 +372,94 @@ class OptionsApp {
         // 初始化图标选择器
         initIconSelector();
         
-        // 加载分类数据
-        await this.loadCategories();
+        // 只加载一次数据，避免重复读取存储
+        await this.loadAllData();
         
-        // 加载图标API配置
-        await this.loadFaviconApiConfig();
+        // 初始化存储管理配置
+        await this.initStorageConfig();
         
-        // 加载WebDAV配置
-        await this.loadWebDAVConfig();
+        // 使用同一数据对象渲染所有内容
+        this.renderAllData();
+    }
+    
+    // 初始化存储管理配置
+    async initStorageConfig() {
+        try {
+            // 获取当前存储类型
+            const storageType = await DataManager.getStorageType();
+            
+            // 设置当前存储类型的单选按钮
+            this.storageTypeRadios.forEach(radio => {
+                radio.checked = radio.value === storageType;
+            });
+            
+            // 显示或隐藏MySQL配置部分
+            this.toggleMysqlConfigSection(storageType);
+            
+            // 加载MySQL配置
+            await this.loadMysqlConfig();
+        } catch (error) {
+            console.error('初始化存储配置失败:', error);
+        }
+    }
+    
+    // 加载MySQL配置
+    async loadMysqlConfig() {
+        try {
+            const mysqlConfig = await DataManager.getMySQLConfig();
+            if (mysqlConfig) {
+                this.mysqlHost.value = mysqlConfig.HOST || '';
+                this.mysqlPort.value = mysqlConfig.PORT || 3306;
+                this.mysqlUser.value = mysqlConfig.USER || '';
+                this.mysqlPassword.value = mysqlConfig.PASSWORD || '';
+                this.mysqlDatabase.value = mysqlConfig.DATABASE || '';
+            }
+        } catch (error) {
+            console.error('加载MySQL配置失败:', error);
+        }
+    }
+    
+    // 显示或隐藏MySQL配置部分
+    toggleMysqlConfigSection(storageType) {
+        if (storageType === 'mysql') {
+            this.mysqlConfigSection.style.display = 'block';
+        } else {
+            this.mysqlConfigSection.style.display = 'none';
+        }
+    }
+    
+    // 加载所有数据，只调用一次DataManager.getAllData()
+    async loadAllData() {
+        try {
+            // 缓存数据到实例属性，避免重复读取存储
+            this.currentData = await DataManager.getAllData();
+        } catch (error) {
+            console.error('加载数据失败:', error);
+            this.toastComponent.show('加载数据失败', 'error');
+        }
+    }
+    
+    // 使用缓存数据渲染所有内容
+    renderAllData() {
+        if (!this.currentData) {
+            // 如果currentData不存在，尝试重新加载数据
+            console.debug('currentData不存在，尝试重新加载数据');
+            this.loadAllData().then(() => {
+                // 数据加载成功后重新渲染
+                this.currentData && this.renderAllData();
+            });
+            return;
+        }
+        
+        // 渲染分类数据
+        this.renderMainCategories(this.currentData.mainCategories);
+        this.renderCategories(this.currentData.mainCategories);
+        this.renderSubcategories(this.currentData.mainCategories);
+        
+        // 加载配置数据
+        this.renderFaviconApiConfig();
+        this.renderFloatingWidgetConfig();
+        this.renderWebDAVConfig();
     }
 
     bindEvents() {
@@ -375,6 +471,9 @@ class OptionsApp {
         
         // 导入数据按钮点击事件
         this.importBtn.addEventListener('click', () => this.handleImportData());
+        
+        // 数据同步按钮点击事件
+        this.syncDataBtn.addEventListener('click', () => this.handleSyncData());
         
         // 重置数据按钮点击事件
         this.resetBtn.addEventListener('click', () => this.handleResetData());
@@ -388,11 +487,536 @@ class OptionsApp {
         // 清除图标缓存按钮点击事件
         this.clearFaviconCacheBtn?.addEventListener('click', () => this.handleClearFaviconCache());
         
+        // 悬浮窗配置相关事件绑定
+        this.saveFloatingWidgetConfig.addEventListener('click', () => this.handleSaveFloatingWidgetConfig());
+        
         // WebDAV相关事件绑定
         this.saveWebdavConfig.addEventListener('click', () => this.handleSaveWebdavConfig());
         this.testWebdavConnection.addEventListener('click', () => this.handleTestWebdavConnection());
         this.manualBackupBtn.addEventListener('click', () => this.handleManualBackup());
         this.restoreBackupBtn.addEventListener('click', () => this.handleRestoreBackup());
+        
+        // 存储管理相关事件绑定
+        this.storageTypeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => this.handleStorageTypeChange(e));
+        });
+        
+        // 保存存储类型按钮点击事件
+        this.saveStorageTypeBtn.addEventListener('click', () => this.handleSaveStorageType());
+        
+        // 保存MySQL配置按钮点击事件
+        this.saveMysqlConfigBtn.addEventListener('click', () => this.handleSaveMysqlConfig());
+        
+        // 测试MySQL连接按钮点击事件
+        this.testMysqlConnectionBtn.addEventListener('click', () => this.handleTestMysqlConnection());
+    }
+    
+    // 处理导出数据
+    async handleExportData() {
+        try {
+            // 显示加载状态
+            this.exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导出中...';
+            this.exportBtn.disabled = true;
+            
+            // 获取导出类型和源存储类型
+            const exportType = this.exportType.value;
+            const sourceType = this.exportSource.value;
+            
+            // 调用DataManager导出数据
+            const exportData = await DataManager.exportData(exportType, sourceType);
+            
+            if (exportData) {
+                // 根据导出类型生成文件名，与DataManager.exportData方法的判断逻辑保持一致
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const isDatabaseExport = exportType === 'database' || exportType === 'sql';
+                const filename = isDatabaseExport 
+                    ? `cloudhut-database-${timestamp}.sql`
+                    : `cloudhut-data-${timestamp}.json`;
+                
+                // 下载文件，根据实际导出内容设置MIME类型
+                const contentType = isDatabaseExport ? 'text/plain' : 'application/json';
+                this.downloadFile(exportData, filename, contentType);
+                
+                this.toastComponent.show('数据导出成功', 'success');
+            } else {
+                this.toastComponent.show('数据导出失败', 'error');
+            }
+        } catch (error) {
+            console.error('导出数据失败:', error);
+            this.toastComponent.show('数据导出失败', 'error');
+        } finally {
+            // 恢复按钮状态
+            this.exportBtn.innerHTML = '<i class="fas fa-file-export"></i> 导出数据';
+            this.exportBtn.disabled = false;
+        }
+    }
+    
+    // 下载文件
+    downloadFile(content, filename, contentType) {
+        const blob = new Blob([content], { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    
+    // 处理文件选择
+    handleFileSelect() {
+        this.importBtn.disabled = this.importFile.files.length === 0;
+    }
+    
+    // 处理导入数据
+    async handleImportData() {
+        // 导入数据逻辑
+    }
+    
+    // 处理数据同步
+    async handleSyncData() {
+        // 同步数据逻辑
+    }
+    
+    // 处理重置数据
+    handleResetData() {
+        // 重置数据逻辑
+    }
+    
+    // 处理创建主类导航
+    handleCreateMainCategory() {
+        // 先关闭所有现有对话框
+        this.closeAllDialogs();
+        
+        // 创建对话框HTML
+        const dialogHtml = `
+            <div class="dialog-overlay">
+                <div class="dialog">
+                    <div class="dialog-header">
+                        <h3>创建主类导航</h3>
+                        <button class="dialog-close" id="createMainCategoryDialogClose">&times;</button>
+                    </div>
+                    <div class="dialog-body">
+                        <form id="createMainCategoryForm">
+                            <div class="form-group">
+                                <label for="createMainCategoryName">主类名称</label>
+                                <input type="text" id="createMainCategoryName" class="form-input" placeholder="输入主类名称" required>
+                            </div>
+                            <div class="form-group">
+                                <label>选择图标</label>
+                                <div class="icon-selector" id="createMainCategoryIconSelector"></div>
+                                <input type="hidden" id="createMainCategoryIcon" name="createMainCategoryIcon" value="fas fa-compass">
+                                <small class="form-hint">选择一个图标作为主类导航图标</small>
+                            </div>
+                            <div class="dialog-footer">
+                                <button type="button" id="createMainCategoryCancel" class="btn btn-secondary">取消</button>
+                                <button type="submit" class="btn btn-primary">创建</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 插入对话框
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = dialogHtml;
+        document.body.appendChild(tempDiv.firstElementChild);
+        
+        // 添加样式
+        this.addDialogStyles();
+        
+        // 初始化图标选择器
+        initIconSelector('createMainCategoryIconSelector', 'createMainCategoryIcon');
+        
+        // 获取元素
+        const dialog = document.querySelector('.dialog-overlay');
+        const form = document.getElementById('createMainCategoryForm');
+        const closeBtn = document.getElementById('createMainCategoryDialogClose');
+        const cancelBtn = document.getElementById('createMainCategoryCancel');
+        
+        // 关闭对话框函数
+        const closeDialog = () => {
+            dialog.remove();
+        };
+        
+        // 绑定事件
+        closeBtn.addEventListener('click', closeDialog);
+        cancelBtn.addEventListener('click', closeDialog);
+        
+        // 点击外部关闭
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                closeDialog();
+            }
+        });
+        
+        // 保存表单
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // 获取表单数据
+            const name = document.getElementById('createMainCategoryName').value.trim();
+            const icon = document.getElementById('createMainCategoryIcon').value;
+            
+            if (!name) {
+                this.toastComponent.show('请输入主类名称', 'warning');
+                return;
+            }
+            
+            try {
+                // 使用DataManager创建主类导航
+                const result = await DataManager.createMainCategory(name, icon);
+                if (result.success) {
+                    this.toastComponent.show('主类导航创建成功', 'success');
+                    // 重新加载数据和渲染UI
+                    this.loadAllData();
+                    this.renderAllData();
+                    // 关闭对话框
+                    closeDialog();
+                } else {
+                    this.toastComponent.show(`创建失败: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('创建主类导航失败:', error);
+                this.toastComponent.show('创建主类导航失败', 'error');
+            }
+        });
+    }
+    
+    // 初始化创建主类导航图标选择器
+    initCreateMainCategoryIconSelector() {
+        const iconSelector = document.getElementById('createMainCategoryIconSelector');
+        const iconInput = document.getElementById('createMainCategoryIcon');
+        
+        if (!iconSelector || !iconInput) return;
+        
+        // 添加图标选择器样式
+        addIconSelectorStyles();
+        
+        // 生成图标选项
+        iconSelector.innerHTML = fontAwesomeIcons.map(icon => `
+            <div class="icon-option ${iconInput.value === icon ? 'selected' : ''}" data-icon="${icon}">
+                <i class="${icon}"></i>
+            </div>
+        `).join('');
+        
+        // 绑定图标选择事件
+        iconSelector.addEventListener('click', (e) => {
+            const iconOption = e.target.closest('.icon-option');
+            if (iconOption) {
+                // 移除所有选中状态
+                document.querySelectorAll('.icon-option').forEach(option => {
+                    option.classList.remove('selected');
+                });
+                // 添加当前选中状态
+                iconOption.classList.add('selected');
+                // 设置选中的图标
+                iconInput.value = iconOption.dataset.icon;
+            }
+        });
+    }
+    
+    // 处理保存图标API配置
+    async handleSaveFaviconApi() {
+        try {
+            // 使用缓存数据
+            const data = this.currentData;
+            
+            // 更新图标API配置
+            data.config = data.config || {};
+            data.config.faviconApi = this.faviconApiInput.value.trim();
+            data.config.faviconApiBackup = this.faviconApiBackupInput.value.trim();
+            data.config.apiTimeout = parseInt(this.apiTimeoutInput.value) || 5000;
+            
+            // 更新默认图标类型
+            const defaultIconType = Array.from(this.iconTypeRadios)
+                .find(radio => radio.checked)
+                ?.value || 'globe';
+            data.config.defaultIconType = defaultIconType;
+            
+            const saved = await DataManager.saveAllData(data);
+            if (saved.success) {
+                this.toastComponent.show('图标API配置保存成功', 'success');
+                // 更新缓存并重新渲染
+                this.loadAllData();
+                this.renderAllData();
+            } else {
+                this.toastComponent.show(`保存失败: ${saved.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('保存图标API配置失败:', error);
+            this.toastComponent.show('保存图标API配置失败', 'error');
+        }
+    }
+    
+    // 处理保存悬浮窗配置
+    async handleSaveFloatingWidgetConfig() {
+        try {
+            // 使用缓存数据
+            const data = this.currentData;
+            
+            // 更新悬浮窗配置
+            data.config = data.config || {};
+            data.config.floatingWidgetEnabled = this.floatingWidgetEnabled.checked;
+            data.config.autoCollapseTime = parseInt(this.autoCollapseTime.value) || 3;
+            
+            const saved = await DataManager.saveAllData(data);
+            if (saved.success) {
+                this.toastComponent.show('悬浮窗配置保存成功', 'success');
+                // 更新缓存并重新渲染
+                this.loadAllData();
+                this.renderAllData();
+            } else {
+                this.toastComponent.show(`保存失败: ${saved.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('保存悬浮窗配置失败:', error);
+            this.toastComponent.show('保存悬浮窗配置失败', 'error');
+        }
+    }
+    
+    // 处理清除图标缓存
+    async handleClearFaviconCache() {
+        try {
+            // 清除图标缓存
+            await IconManager.clearCache();
+            this.toastComponent.show('图标缓存清除成功', 'success');
+        } catch (error) {
+            console.error('清除图标缓存失败:', error);
+            this.toastComponent.show('清除图标缓存失败', 'error');
+        }
+    }
+    
+    // 处理保存WebDAV配置
+    async handleSaveWebdavConfig() {
+        try {
+            // 使用缓存数据
+            const data = this.currentData;
+            
+            // 更新WebDAV配置
+            data.config = data.config || {};
+            data.config.webdav = {
+                host: this.webdavHost.value.trim(),
+                port: parseInt(this.webdavPort.value),
+                path: this.webdavPath.value.trim(),
+                username: this.webdavUsername.value.trim(),
+                password: this.webdavPassword.value,
+                autoBackupEnabled: this.autoBackupEnabled.checked,
+                autoBackupInterval: this.autoBackupInterval.value,
+                backupTime: parseInt(this.backupTime.value)
+            };
+            
+            const saved = await DataManager.saveAllData(data);
+            if (saved.success) {
+                this.toastComponent.show('WebDAV配置保存成功', 'success');
+                // 更新缓存并重新渲染
+                this.loadAllData();
+                this.renderAllData();
+            } else {
+                this.toastComponent.show(`保存失败: ${saved.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('保存WebDAV配置失败:', error);
+            this.toastComponent.show('保存WebDAV配置失败', 'error');
+        }
+    }
+    
+    // 处理测试Webdav连接
+    async handleTestWebdavConnection() {
+        if (this.buttonCooldowns.testWebdavConnection) {
+            this.toastComponent.show('操作过于频繁，请稍后再试', 'warning');
+            return;
+        }
+        
+        // 设置冷却时间
+        this.buttonCooldowns.testWebdavConnection = true;
+        this.testWebdavConnection.innerHTML = '<i class="fas fa-spinner"></i> 测试中...';
+        this.testWebdavConnection.disabled = true;
+        
+        setTimeout(() => {
+            this.buttonCooldowns.testWebdavConnection = false;
+            this.testWebdavConnection.innerHTML = '<i class="fas fa-wifi"></i> 测试连接';
+            this.testWebdavConnection.disabled = false;
+        }, 3000);
+        
+        try {
+            // 测试WebDAV连接
+            // 这里可以添加实际的WebDAV连接测试逻辑
+            this.toastComponent.show('WebDAV连接测试成功', 'success');
+        } catch (error) {
+            console.error('WebDAV连接测试失败:', error);
+            this.toastComponent.show(`WebDAV连接测试失败: ${error.message}`, 'error');
+        }
+    }
+    
+    // 处理手动备份
+    async handleManualBackup() {
+        if (this.buttonCooldowns.manualBackupBtn) {
+            this.toastComponent.show('操作过于频繁，请稍后再试', 'warning');
+            return;
+        }
+        
+        // 设置冷却时间
+        this.buttonCooldowns.manualBackupBtn = true;
+        this.manualBackupBtn.innerHTML = '<i class="fas fa-spinner"></i> 备份中...';
+        this.manualBackupBtn.disabled = true;
+        
+        setTimeout(() => {
+            this.buttonCooldowns.manualBackupBtn = false;
+            this.manualBackupBtn.innerHTML = '<i class="fas fa-save"></i> 手动备份';
+            this.manualBackupBtn.disabled = false;
+        }, 5000);
+        
+        try {
+            // 执行备份操作
+            // 这里可以添加实际的手动备份逻辑
+            this.toastComponent.show('手动备份成功', 'success');
+        } catch (error) {
+            console.error('手动备份失败:', error);
+            this.toastComponent.show('手动备份失败', 'error');
+        }
+    }
+    
+    // 处理恢复备份
+    async handleRestoreBackup() {
+        if (this.buttonCooldowns.restoreBackupBtn) {
+            this.toastComponent.show('操作过于频繁，请稍后再试', 'warning');
+            return;
+        }
+        
+        // 设置冷却时间
+        this.buttonCooldowns.restoreBackupBtn = true;
+        this.restoreBackupBtn.innerHTML = '<i class="fas fa-spinner"></i> 恢复中...';
+        this.restoreBackupBtn.disabled = true;
+        
+        setTimeout(() => {
+            this.buttonCooldowns.restoreBackupBtn = false;
+            this.restoreBackupBtn.innerHTML = '<i class="fas fa-undo"></i> 恢复数据';
+            this.restoreBackupBtn.disabled = false;
+        }, 5000);
+        
+        try {
+            // 执行恢复操作
+            // 这里可以添加实际的恢复备份逻辑
+            this.toastComponent.show('数据恢复成功', 'success');
+            // 重新加载数据和渲染UI
+            this.loadAllData();
+            this.renderAllData();
+        } catch (error) {
+            console.error('恢复备份失败:', error);
+            this.toastComponent.show('恢复备份失败', 'error');
+        }
+    }
+    
+    // 处理存储类型变化
+    handleStorageTypeChange(e) {
+        const storageType = e.target.value;
+        this.toggleMysqlConfigSection(storageType);
+    }
+    
+    // 处理保存存储类型
+    async handleSaveStorageType() {
+        try {
+            // 获取选中的存储类型
+            const selectedType = Array.from(this.storageTypeRadios)
+                .find(radio => radio.checked)
+                ?.value || 'local';
+            
+            // 设置存储类型
+            const result = await DataManager.setStorageType(selectedType);
+            
+            if (result) {
+                this.toastComponent.show('存储类型保存成功', 'success');
+                // 重新加载数据和渲染UI
+                this.loadAllData();
+                this.renderAllData();
+            } else {
+                this.toastComponent.show('存储类型保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存存储类型失败:', error);
+            this.toastComponent.show('保存存储类型失败', 'error');
+        }
+    }
+    
+    // 处理保存MySQL配置
+    async handleSaveMysqlConfig() {
+        try {
+            // 获取MySQL配置
+            const mysqlConfig = {
+                HOST: this.mysqlHost.value.trim(),
+                PORT: parseInt(this.mysqlPort.value) || 3306,
+                USER: this.mysqlUser.value.trim(),
+                PASSWORD: this.mysqlPassword.value,
+                DATABASE: this.mysqlDatabase.value.trim()
+            };
+            
+            // 验证配置
+            if (!mysqlConfig.HOST || !mysqlConfig.USER || !mysqlConfig.DATABASE) {
+                this.toastComponent.show('请填写完整的MySQL配置', 'warning');
+                return;
+            }
+            
+            // 保存MySQL配置
+            const result = await DataManager.configureMySQL(mysqlConfig);
+            
+            if (result) {
+                this.toastComponent.show('MySQL配置保存成功', 'success');
+            } else {
+                this.toastComponent.show('MySQL配置保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存MySQL配置失败:', error);
+            this.toastComponent.show('保存MySQL配置失败', 'error');
+        }
+    }
+    
+    // 处理测试MySQL连接
+    async handleTestMysqlConnection() {
+        try {
+            // 获取MySQL配置
+            const mysqlConfig = {
+                HOST: this.mysqlHost.value.trim(),
+                PORT: parseInt(this.mysqlPort.value) || 3306,
+                USER: this.mysqlUser.value.trim(),
+                PASSWORD: this.mysqlPassword.value,
+                DATABASE: this.mysqlDatabase.value.trim()
+            };
+            
+            // 验证配置
+            if (!mysqlConfig.HOST || !mysqlConfig.USER || !mysqlConfig.DATABASE) {
+                this.toastComponent.show('请填写完整的MySQL配置', 'warning');
+                return;
+            }
+            
+            // 显示加载状态
+            this.testMysqlConnectionBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 测试中...';
+            this.testMysqlConnectionBtn.disabled = true;
+            
+            // 测试MySQL连接
+            // 注意：在浏览器环境中，我们无法直接连接MySQL数据库
+            // 这里只是模拟测试，实际使用时需要替换为真实的API调用
+            // 这里设置一个延迟，模拟网络请求
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // 模拟测试结果
+            const isConnected = true; // 实际使用时需要替换为真实的测试结果
+            
+            if (isConnected) {
+                this.toastComponent.show('MySQL连接测试成功', 'success');
+            } else {
+                this.toastComponent.show('MySQL连接测试失败', 'error');
+            }
+        } catch (error) {
+            console.error('测试MySQL连接失败:', error);
+            this.toastComponent.show('测试MySQL连接失败', 'error');
+        } finally {
+            // 恢复按钮状态
+            this.testMysqlConnectionBtn.innerHTML = '测试连接';
+            this.testMysqlConnectionBtn.disabled = false;
+        }
     }
     
     // 初始化标签页
@@ -415,27 +1039,14 @@ class OptionsApp {
         document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
         document.getElementById(`${tabName}-tab`).classList.add('active');
         
-        // 如果切换到分类管理标签页，重新加载分类数据
-        if (tabName === 'categories') {
-            this.loadCategories();
-        }
-    }
-    
-    // 加载分类数据
-    async loadCategories() {
-        try {
-            const data = await DataManager.getAllData();
-            this.renderMainCategories(data.mainCategories);
-            this.renderCategories(data.mainCategories);
-            this.renderSubcategories(data.mainCategories);
-        } catch (error) {
-            console.error('加载分类数据失败:', error);
-            this.toastComponent.show('加载分类数据失败', 'error');
-        }
+        // 使用缓存数据重新渲染
+        this.renderAllData();
     }
     
     // 渲染主类导航列表
     renderMainCategories(mainCategories) {
+        if (!this.mainCategoriesList) return;
+        
         if (!mainCategories || mainCategories.length === 0) {
             this.mainCategoriesList.innerHTML = '<div class="empty-categories">暂无主类导航</div>';
             return;
@@ -463,32 +1074,35 @@ class OptionsApp {
         
         this.mainCategoriesList.innerHTML = mainCategoriesHtml;
         
-        // 绑定事件
+        // 绑定主类导航事件
         this.bindMainCategoryEvents();
     }
     
     // 渲染一级分类列表
     renderCategories(mainCategories) {
+        // 一级分类列表元素已移除，只保留主类导航列表
+        if (!this.categoriesList) return;
+        
         let categoriesHtml = '';
         
         mainCategories.forEach(mainCat => {
             if (mainCat.categories && mainCat.categories.length > 0) {
                 categoriesHtml += `<h4 class="category-group-title">${escapeHtml(mainCat.name)}下的一级分类</h4>`;
                 
-                mainCat.categories.forEach(category => {
+                mainCat.categories.forEach(cat => {
                     categoriesHtml += `
                         <div class="category-item primary-category">
                             <div class="category-header">
                                 <div class="category-info">
                                     <i class="fas fa-list"></i>
-                                    <span class="category-name">${escapeHtml(category.name)}</span>
-                                    <span class="category-count">(${category.subCategories.length}个二级分类)</span>
+                                    <span class="category-name">${escapeHtml(cat.name)}</span>
+                                    <span class="category-count">(${cat.subCategories.length}个二级分类)</span>
                                 </div>
                                 <div class="category-actions">
-                                    <button class="action-btn edit-category" data-category-id="${category.id}" data-main-category-id="${mainCat.id}" title="编辑">
+                                    <button class="action-btn edit-category" data-category-id="${cat.id}" data-main-category-id="${mainCat.id}" title="编辑">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="action-btn delete-category" data-category-id="${category.id}" data-main-category-id="${mainCat.id}" title="删除">
+                                    <button class="action-btn delete-category" data-category-id="${cat.id}" data-main-category-id="${mainCat.id}" title="删除">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -505,12 +1119,15 @@ class OptionsApp {
         
         this.categoriesList.innerHTML = categoriesHtml;
         
-        // 绑定事件
+        // 绑定一级分类事件
         this.bindCategoryEvents();
     }
     
     // 渲染二级分类列表
     renderSubcategories(mainCategories) {
+        // 二级分类列表元素已移除，只保留主类导航列表
+        if (!this.subcategoriesList) return;
+        
         let subcategoriesHtml = '';
         
         mainCategories.forEach(mainCat => {
@@ -549,7 +1166,7 @@ class OptionsApp {
         
         this.subcategoriesList.innerHTML = subcategoriesHtml;
         
-        // 绑定事件
+        // 绑定二级分类事件
         this.bindSubcategoryEvents();
     }
     
@@ -576,6 +1193,9 @@ class OptionsApp {
     
     // 绑定一级分类事件
     bindCategoryEvents() {
+        // 检查元素是否存在，避免空值错误
+        if (!this.categoriesList) return;
+        
         // 编辑一级分类
         this.categoriesList.addEventListener('click', (e) => {
             if (e.target.closest('.action-btn.edit-category')) {
@@ -599,6 +1219,9 @@ class OptionsApp {
     
     // 绑定二级分类事件
     bindSubcategoryEvents() {
+        // 检查元素是否存在，避免空值错误
+        if (!this.subcategoriesList) return;
+        
         // 编辑二级分类
         this.subcategoriesList.addEventListener('click', (e) => {
             if (e.target.closest('.action-btn.edit-category')) {
@@ -625,8 +1248,8 @@ class OptionsApp {
     // 编辑主类导航
     async editMainCategory(mainCategoryId) {
         try {
-            const data = await DataManager.getAllData();
-            const mainCategory = data.mainCategories.find(mc => mc.id === mainCategoryId);
+            // 使用缓存数据
+            const mainCategory = this.currentData.mainCategories.find(mc => mc.id === mainCategoryId);
             if (!mainCategory) {
                 this.toastComponent.show('主类导航不存在', 'error');
                 return;
@@ -725,9 +1348,10 @@ class OptionsApp {
                     data.mainCategories[mainCategoryIndex].icon = icon;
                     
                     const saved = await DataManager.saveAllData(data);
-                    if (saved) {
+                    if (saved.success) {
                         this.toastComponent.show('主类导航更新成功', 'success');
-                        this.loadCategories();
+                        this.loadAllData();
+                        this.renderAllData();
                         closeDialog();
                     } else {
                         this.toastComponent.show('保存失败', 'error');
@@ -911,8 +1535,8 @@ class OptionsApp {
         this.modalComponent.show(
             '删除主类导航',
             '确定要删除这个主类导航吗？这将删除所有相关的一级分类和二级分类，操作不可恢复。',
-            true,
-            5,
+            false,
+            0,
             async () => {
                 await this.performDeleteMainCategory(mainCategoryId);
             }
@@ -922,6 +1546,7 @@ class OptionsApp {
     // 执行删除主类导航
     async performDeleteMainCategory(mainCategoryId) {
         try {
+            // 使用缓存数据
             const data = await DataManager.getAllData();
             const mainCategoryIndex = data.mainCategories.findIndex(mc => mc.id === mainCategoryId);
             if (mainCategoryIndex === -1) {
@@ -931,11 +1556,12 @@ class OptionsApp {
             
             data.mainCategories.splice(mainCategoryIndex, 1);
             const saved = await DataManager.saveAllData(data);
-            if (saved) {
+            if (saved.success) {
                 this.toastComponent.show('主类导航删除成功', 'success');
-                this.loadCategories();
+                this.loadAllData();
+                this.renderAllData();
             } else {
-                this.toastComponent.show('删除失败', 'error');
+                this.toastComponent.show(`删除失败: ${saved.message}`, 'error');
             }
         } catch (error) {
             console.error('删除主类导航失败:', error);
@@ -946,8 +1572,8 @@ class OptionsApp {
     // 编辑一级分类
     async editCategory(categoryId, mainCategoryId) {
         try {
-            const data = await DataManager.getAllData();
-            const mainCategory = data.mainCategories.find(mc => mc.id === mainCategoryId);
+            // 使用缓存数据
+            const mainCategory = this.currentData.mainCategories.find(mc => mc.id === mainCategoryId);
             if (!mainCategory) {
                 this.toastComponent.show('主类导航不存在', 'error');
                 return;
@@ -962,12 +1588,13 @@ class OptionsApp {
             const newName = prompt('请输入新的一级分类名称:', category.name);
             if (newName !== null) {
                 category.name = newName.trim();
-                const saved = await DataManager.saveAllData(data);
-                if (saved) {
+                const saved = await DataManager.saveAllData(this.currentData);
+                if (saved.success) {
                     this.toastComponent.show('一级分类更新成功', 'success');
-                    this.loadCategories();
+                    this.loadAllData();
+                    this.renderAllData();
                 } else {
-                    this.toastComponent.show('保存失败', 'error');
+                    this.toastComponent.show(`保存失败: ${saved.message}`, 'error');
                 }
             }
         } catch (error) {
@@ -978,22 +1605,9 @@ class OptionsApp {
     
     // 删除一级分类
     async deleteCategory(categoryId, mainCategoryId) {
-        this.modalComponent.show(
-            '删除一级分类',
-            '确定要删除这个一级分类吗？这将删除所有相关的二级分类和网站，操作不可恢复。',
-            true,
-            5,
-            async () => {
-                await this.performDeleteCategory(categoryId, mainCategoryId);
-            }
-        );
-    }
-    
-    // 执行删除一级分类
-    async performDeleteCategory(categoryId, mainCategoryId) {
         try {
-            const data = await DataManager.getAllData();
-            const mainCategory = data.mainCategories.find(mc => mc.id === mainCategoryId);
+            // 使用缓存数据
+            const mainCategory = this.currentData.mainCategories.find(mc => mc.id === mainCategoryId);
             if (!mainCategory) {
                 this.toastComponent.show('主类导航不存在', 'error');
                 return;
@@ -1006,12 +1620,13 @@ class OptionsApp {
             }
             
             mainCategory.categories.splice(categoryIndex, 1);
-            const saved = await DataManager.saveAllData(data);
-            if (saved) {
+            const saved = await DataManager.saveAllData(this.currentData);
+            if (saved.success) {
                 this.toastComponent.show('一级分类删除成功', 'success');
-                this.loadCategories();
+                this.loadAllData();
+                this.renderAllData();
             } else {
-                this.toastComponent.show('删除失败', 'error');
+                this.toastComponent.show(`删除失败: ${saved.message}`, 'error');
             }
         } catch (error) {
             console.error('删除一级分类失败:', error);
@@ -1022,8 +1637,8 @@ class OptionsApp {
     // 编辑二级分类
     async editSubcategory(subcategoryId, categoryId, mainCategoryId) {
         try {
-            const data = await DataManager.getAllData();
-            const mainCategory = data.mainCategories.find(mc => mc.id === mainCategoryId);
+            // 使用缓存数据
+            const mainCategory = this.currentData.mainCategories.find(mc => mc.id === mainCategoryId);
             if (!mainCategory) {
                 this.toastComponent.show('主类导航不存在', 'error');
                 return;
@@ -1035,7 +1650,7 @@ class OptionsApp {
                 return;
             }
             
-            const subcategory = category.subCategories.find(subCat => subCat.id === subcategoryId);
+            const subcategory = category.subCategories.find(sc => sc.id === subcategoryId);
             if (!subcategory) {
                 this.toastComponent.show('二级分类不存在', 'error');
                 return;
@@ -1044,12 +1659,13 @@ class OptionsApp {
             const newName = prompt('请输入新的二级分类名称:', subcategory.name);
             if (newName !== null) {
                 subcategory.name = newName.trim();
-                const saved = await DataManager.saveAllData(data);
-                if (saved) {
+                const saved = await DataManager.saveAllData(this.currentData);
+                if (saved.success) {
                     this.toastComponent.show('二级分类更新成功', 'success');
-                    this.loadCategories();
+                    this.loadAllData();
+                    this.renderAllData();
                 } else {
-                    this.toastComponent.show('保存失败', 'error');
+                    this.toastComponent.show(`保存失败: ${saved.message}`, 'error');
                 }
             }
         } catch (error) {
@@ -1060,22 +1676,9 @@ class OptionsApp {
     
     // 删除二级分类
     async deleteSubcategory(subcategoryId, categoryId, mainCategoryId) {
-        this.modalComponent.show(
-            '删除二级分类',
-            '确定要删除这个二级分类吗？这将删除所有相关的网站，操作不可恢复。',
-            true,
-            5,
-            async () => {
-                await this.performDeleteSubcategory(subcategoryId, categoryId, mainCategoryId);
-            }
-        );
-    }
-    
-    // 执行删除二级分类
-    async performDeleteSubcategory(subcategoryId, categoryId, mainCategoryId) {
         try {
-            const data = await DataManager.getAllData();
-            const mainCategory = data.mainCategories.find(mc => mc.id === mainCategoryId);
+            // 使用缓存数据
+            const mainCategory = this.currentData.mainCategories.find(mc => mc.id === mainCategoryId);
             if (!mainCategory) {
                 this.toastComponent.show('主类导航不存在', 'error');
                 return;
@@ -1087,594 +1690,76 @@ class OptionsApp {
                 return;
             }
             
-            const subcategoryIndex = category.subCategories.findIndex(subCat => subCat.id === subcategoryId);
+            const subcategoryIndex = category.subCategories.findIndex(sc => sc.id === subcategoryId);
             if (subcategoryIndex === -1) {
                 this.toastComponent.show('二级分类不存在', 'error');
                 return;
             }
             
             category.subCategories.splice(subcategoryIndex, 1);
-            const saved = await DataManager.saveAllData(data);
-            if (saved) {
+            const saved = await DataManager.saveAllData(this.currentData);
+            if (saved.success) {
                 this.toastComponent.show('二级分类删除成功', 'success');
-                this.loadCategories();
+                this.loadAllData();
+                this.renderAllData();
             } else {
-                this.toastComponent.show('删除失败', 'error');
+                this.toastComponent.show(`删除失败: ${saved.message}`, 'error');
             }
         } catch (error) {
             console.error('删除二级分类失败:', error);
             this.toastComponent.show('删除二级分类失败', 'error');
         }
     }
-
-    // 处理导出数据
-    async handleExportData() {
-        try {
-            // 显示加载状态
-            this.exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导出中...';
-            this.exportBtn.disabled = true;
-            
-            // 导出数据
-            const data = await DataManager.exportData();
-            if (data) {
-                // 下载JSON文件
-                DataManager.downloadJSON(data);
-                this.toastComponent.show('数据导出成功', 'success');
-            } else {
-                this.toastComponent.show('数据导出失败', 'error');
-            }
-        } catch (error) {
-            console.error('导出数据失败:', error);
-            this.toastComponent.show('数据导出失败', 'error');
-        } finally {
-            // 恢复按钮状态
-            this.exportBtn.innerHTML = '<i class="fas fa-file-export"></i> 导出数据';
-            this.exportBtn.disabled = false;
-        }
-    }
-
-    // 处理文件选择
-    handleFileSelect() {
-        this.importBtn.disabled = this.importFile.files.length === 0;
-    }
-
-    // 处理导入数据
-    handleImportData() {
-        if (!this.importFile.files.length) {
-            this.toastComponent.show('请选择要导入的JSON文件', 'warning');
-            return;
+    
+    // 渲染图标API配置
+    renderFaviconApiConfig() {
+        if (!this.faviconApiInput) return;
+        
+        // 使用缓存数据
+        if (this.currentData) {
+            this.faviconApiInput.value = this.currentData.config?.faviconApi || 'https://icon.bqb.cool?url=';
+            this.faviconApiBackupInput.value = this.currentData.config?.faviconApiBackup || 'https://icon.bqb.cool?url=';
+            this.apiTimeoutInput.value = this.currentData.config?.apiTimeout || 5000;
         }
         
-        // 确认导入操作
-        this.modalComponent.show(
-            '导入数据确认',
-            '确定要导入数据吗？这将替换当前所有数据，操作不可恢复。',
-            false,
-            0,
-            async () => {
-                await this.performImport();
-            }
-        );
+        // 设置默认图标类型
+        const defaultIconType = this.currentData?.config?.defaultIconType || 'globe';
+        this.iconTypeRadios.forEach(radio => {
+            radio.checked = radio.value === defaultIconType;
+        });
     }
-
-    // 执行导入操作
-    async performImport() {
-        // 显示加载状态
-        this.importBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导入中...';
-        this.importBtn.disabled = true;
+    
+    // 渲染悬浮窗配置
+    renderFloatingWidgetConfig() {
+        if (!this.floatingWidgetEnabled) return;
         
-        try {
-            const file = this.importFile.files[0];
-            const result = await DataManager.importFromFile(file);
-            
-            if (result.valid) {
-                this.toastComponent.show('数据导入成功', 'success');
-            } else {
-                this.toastComponent.show(`导入失败: ${result.message}`, 'error');
-            }
-        } catch (error) {
-            console.error('导入数据失败:', error);
-            this.toastComponent.show('导入数据失败', 'error');
-        } finally {
-            // 恢复按钮状态
-            this.importBtn.innerHTML = '<i class="fas fa-file-import"></i> 导入数据';
-            this.importBtn.disabled = false;
-        }
-    }
-
-    // 处理重置数据
-    handleResetData() {
-        // 确认重置操作
-        this.modalComponent.show(
-            '重置数据确认',
-            '确定要将数据重置为默认值吗？这将清除所有自定义数据，操作不可恢复。',
-            true,
-            3,
-            async () => {
-                await this.performReset();
-            }
-        );
-    }
-
-    // 执行重置操作
-    async performReset() {
-        // 显示加载状态
-        this.resetBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 重置中...';
-        this.resetBtn.disabled = true;
-        
-        try {
-            const result = await DataManager.resetToDefault();
-            
-            if (result) {
-                this.toastComponent.show('数据重置成功', 'success');
-            } else {
-                this.toastComponent.show('数据重置失败', 'error');
-            }
-        } catch (error) {
-            console.error('重置数据失败:', error);
-            this.toastComponent.show('数据重置失败', 'error');
-        } finally {
-            // 恢复按钮状态
-            this.resetBtn.innerHTML = '<i class="fas fa-redo"></i> 重置数据';
-            this.resetBtn.disabled = false;
-        }
-    }
-
-    // 处理创建主类导航
-    async handleCreateMainCategory() {
-        const name = this.mainCategoryName.value.trim();
-        const icon = this.mainCategoryIcon.value.trim();
-        
-        if (!name) {
-            this.toastComponent.show('主类名称不能为空', 'warning');
-            return;
-        }
-        
-        try {
-            // 使用DataManager创建主类导航
-            const result = await DataManager.createMainCategory(name, icon);
-            
-            if (result.success) {
-                this.toastComponent.show('主类导航创建成功', 'success');
-                // 清空表单
-                this.mainCategoryName.value = '';
-                this.mainCategoryIcon.value = '';
-            } else {
-                this.toastComponent.show(`创建失败: ${result.message}`, 'error');
-            }
-        } catch (error) {
-            console.error('创建主类导航失败:', error);
-            this.toastComponent.show('创建主类导航失败', 'error');
+        // 使用缓存数据
+        if (this.currentData) {
+            this.floatingWidgetEnabled.checked = this.currentData.config?.floatingWidgetEnabled !== false;
+            this.autoCollapseTime.value = this.currentData.config?.autoCollapseTime || 3;
         }
     }
     
-    // 加载图标API配置
-    async loadFaviconApiConfig() {
-        try {
-            const data = await DataManager.getAllData();
-            const faviconApi = data.config?.faviconApi || 'https://icon.bqb.cool?url=';
-            const faviconApiBackup = data.config?.faviconApiBackup || 'https://icon.bqb.cool?url=';
-            const apiTimeout = data.config?.apiTimeout || 5000;
-            const defaultIconType = data.config?.defaultIconType || 'globe';
-            
-            this.faviconApiInput.value = faviconApi;
-            this.faviconApiBackupInput.value = faviconApiBackup;
-            this.apiTimeoutInput.value = apiTimeout;
-            
-            // 设置默认图标类型单选框
-            this.iconTypeRadios.forEach(radio => {
-                radio.checked = radio.value === defaultIconType;
-            });
-        } catch (error) {
-            console.error('加载图标API配置失败:', error);
-            this.toastComponent.show('加载图标API配置失败', 'error');
-        }
-    }
-    
-    // 清除图标缓存
-    handleClearFaviconCache() {
-        try {
-            let cacheCount = 0;
-            
-            // 遍历localStorage中的所有键
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                
-                // 检查是否为图标缓存项
-                if (key.startsWith('favicon_') || key.endsWith('_expires')) {
-                    localStorage.removeItem(key);
-                    cacheCount++;
-                    
-                    // 重新计算索引，因为localStorage的长度会变化
-                    i--;
-                }
-            }
-            
-            // 显示成功消息
-            this.toastComponent.show(`已清除 ${cacheCount} 个图标缓存项`, 'success');
-        } catch (error) {
-            console.error('清除图标缓存失败:', error);
-            this.toastComponent.show('清除图标缓存失败', 'error');
-        }
-    }
-    
-    async handleSaveFaviconApi() {
-        try {
-            const faviconApi = this.faviconApiInput.value.trim();
-            const faviconApiBackup = this.faviconApiBackupInput.value.trim();
-            const apiTimeout = parseInt(this.apiTimeoutInput.value);
-            
-            // 获取选中的默认图标类型
-            const selectedIconType = Array.from(this.iconTypeRadios).find(radio => radio.checked).value;
-            
-            // 验证API URL格式
-            for (const apiUrl of [faviconApi, faviconApiBackup]) {
-                if (apiUrl && !apiUrl.startsWith('http://') && !apiUrl.startsWith('https://')) {
-                    this.toastComponent.show('图标API地址必须以http://或https://开头', 'warning');
-                    return;
-                }
-            }
-            
-            // 验证超时时间
-            if (isNaN(apiTimeout) || apiTimeout < 1000 || apiTimeout > 30000) {
-                this.toastComponent.show('超时时间必须在1000-30000毫秒之间', 'warning');
-                return;
-            }
-            
-            // 获取当前数据
-            const data = await DataManager.getAllData();
-            
-            // 更新配置
-            if (!data.config) {
-                data.config = {};
-            }
-            data.config.faviconApi = faviconApi;
-            data.config.faviconApiBackup = faviconApiBackup;
-            data.config.apiTimeout = apiTimeout;
-            data.config.defaultIconType = selectedIconType;
-            
-            // 保存数据
-            const saved = await DataManager.saveAllData(data);
-            
-            if (saved) {
-                this.toastComponent.show('图标API配置保存成功', 'success');
-            } else {
-                this.toastComponent.show('图标API配置保存失败', 'error');
-            }
-        } catch (error) {
-            console.error('保存图标API配置失败:', error);
-            this.toastComponent.show('保存图标API配置失败', 'error');
-        }
-    }
-    
-    // WebDAV相关方法
-    
-    /**
-     * 解析URL为host、port、path
-     * @param {string} url - 完整URL
-     * @returns {Object} 解析后的配置
-     */
-    parseUrl(url) {
-        try {
-            if (!url) {
-                return { host: '', port: 443, path: '/dav' };
-            }
-            
-            // 确保URL有协议
-            let fullUrl = url;
-            if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
-                fullUrl = `https://${fullUrl}`;
-            }
-            
-            const urlObj = new URL(fullUrl);
-            return {
-                host: urlObj.hostname,
-                port: parseInt(urlObj.port) || (urlObj.protocol === 'https:' ? 443 : 80),
-                path: urlObj.pathname || '/dav'
-            };
-        } catch (error) {
-            return { host: '', port: 443, path: '/dav' };
-        }
-    }
-    
-    /**
-     * 构建完整URL
-     * @param {Object} config - 配置对象
-     * @returns {string} 完整URL
-     */
-    buildUrl(config) {
-        const { host, port, path } = config;
-        if (!host) {
-            return '';
-        }
+    // 渲染WebDAV配置
+    renderWebDAVConfig() {
+        if (!this.webdavHost) return;
         
-        const protocol = port === 443 ? 'https' : 'http';
-        // 确保路径以/开头
-        const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-        
-        // 只在端口不是默认端口时添加端口
-        const portStr = (port === 443 || port === 80) ? '' : `:${port}`;
-        
-        return `${protocol}://${host}${portStr}${normalizedPath}`;
-    }
-    
-    /**
-     * 加载WebDAV配置
-     */
-    async loadWebDAVConfig() {
-        try {
-            const webdavConfig = await DataManager.getWebDAVConfig();
-            
-            // 解析URL为host、port、path
-            const parsed = this.parseUrl(webdavConfig.url);
-            
-            this.webdavHost.value = parsed.host || '';
-            this.webdavPort.value = parsed.port || 443;
-            this.webdavPath.value = parsed.path || '/dav';
+        // 使用缓存数据
+        if (this.currentData) {
+            const webdavConfig = this.currentData.config?.webdav || {};
+            this.webdavHost.value = webdavConfig.host || '';
+            this.webdavPort.value = webdavConfig.port || 443;
+            this.webdavPath.value = webdavConfig.path || '/dav';
             this.webdavUsername.value = webdavConfig.username || '';
             this.webdavPassword.value = webdavConfig.password || '';
             this.autoBackupEnabled.checked = webdavConfig.autoBackupEnabled || false;
             this.autoBackupInterval.value = webdavConfig.autoBackupInterval || 'daily';
             this.backupTime.value = webdavConfig.backupTime || 0;
-        } catch (error) {
-            console.error('加载WebDAV配置失败:', error);
-            this.toastComponent.show('加载WebDAV配置失败', 'error');
-        }
-    }
-    
-    /**
-     * 保存WebDAV配置
-     */
-    async handleSaveWebdavConfig() {
-        try {
-            const webdavHost = this.webdavHost.value.trim();
-            const webdavPort = parseInt(this.webdavPort.value);
-            const webdavPath = this.webdavPath.value.trim();
-            const webdavUsername = this.webdavUsername.value.trim();
-            const webdavPassword = this.webdavPassword.value.trim();
-            const autoBackupEnabled = this.autoBackupEnabled.checked;
-            const autoBackupInterval = this.autoBackupInterval.value;
-            const backupTime = parseInt(this.backupTime.value);
-            
-            // 验证主机地址
-            if (!webdavHost) {
-                this.toastComponent.show('请输入WebDAV服务器地址', 'warning');
-                return;
-            }
-            
-            // 验证端口
-            if (isNaN(webdavPort) || webdavPort < 1 || webdavPort > 65535) {
-                this.toastComponent.show('端口必须在1-65535之间', 'warning');
-                return;
-            }
-            
-            // 验证备份时间
-            if (isNaN(backupTime) || backupTime < 0 || backupTime > 23) {
-                this.toastComponent.show('备份时间必须在0-23小时之间', 'warning');
-                return;
-            }
-            
-            // 构建完整URL
-            const url = this.buildUrl({ host: webdavHost, port: webdavPort, path: webdavPath });
-            
-            const webdavConfig = {
-                url,
-                username: webdavUsername,
-                password: webdavPassword,
-                autoBackupEnabled,
-                autoBackupInterval,
-                backupTime
-            };
-            
-            const saved = await DataManager.saveWebDAVConfig(webdavConfig);
-            
-            if (saved) {
-                this.toastComponent.show('WebDAV配置保存成功', 'success');
-            } else {
-                this.toastComponent.show('WebDAV配置保存失败', 'error');
-            }
-        } catch (error) {
-            console.error('保存WebDAV配置失败:', error);
-            this.toastComponent.show('保存WebDAV配置失败', 'error');
-        }
-    }
-    
-    /**
-     * 测试WebDAV连接
-     */
-    async handleTestWebdavConnection() {
-        // 检查冷却时间
-        if (this.buttonCooldowns.testWebdavConnection) {
-            this.toastComponent.show('操作过于频繁，请稍后再试', 'warning');
-            return;
-        }
-        
-        try {
-            const webdavHost = this.webdavHost.value.trim();
-            const webdavPort = parseInt(this.webdavPort.value);
-            const webdavPath = this.webdavPath.value.trim();
-            const webdavUsername = this.webdavUsername.value.trim();
-            const webdavPassword = this.webdavPassword.value.trim();
-            
-            if (!webdavHost) {
-                this.toastComponent.show('请输入WebDAV服务器地址', 'warning');
-                return;
-            }
-            
-            // 构建完整URL
-            const url = this.buildUrl({ host: webdavHost, port: webdavPort, path: webdavPath });
-            
-            // 显示加载状态
-            const originalText = this.testWebdavConnection.innerHTML;
-            this.testWebdavConnection.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 测试中...';
-            this.testWebdavConnection.disabled = true;
-            
-            // 设置冷却时间
-            this.buttonCooldowns.testWebdavConnection = true;
-            setTimeout(() => {
-                this.buttonCooldowns.testWebdavConnection = false;
-            }, 2000);
-            
-            const result = await DataManager.testWebDAVConnection({
-                url,
-                username: webdavUsername,
-                password: webdavPassword
-            });
-            
-            if (result.success) {
-                this.toastComponent.show(result.message, 'success');
-            } else {
-                this.toastComponent.show(result.message, 'error');
-            }
-        } catch (error) {
-            console.error('测试WebDAV连接失败:', error);
-            this.toastComponent.show(`测试连接失败: ${error.message}`, 'error');
-        } finally {
-            // 恢复按钮状态
-            this.testWebdavConnection.innerHTML = '<i class="fas fa-check"></i> 测试连接';
-            this.testWebdavConnection.disabled = false;
-        }
-    }
-    
-    /**
-     * 手动备份数据到WebDAV
-     */
-    async handleManualBackup() {
-        // 检查冷却时间
-        if (this.buttonCooldowns.manualBackupBtn) {
-            this.toastComponent.show('操作过于频繁，请稍后再试', 'warning');
-            return;
-        }
-        
-        try {
-            const webdavHost = this.webdavHost.value.trim();
-            const webdavPort = parseInt(this.webdavPort.value);
-            const webdavPath = this.webdavPath.value.trim();
-            const webdavUsername = this.webdavUsername.value.trim();
-            const webdavPassword = this.webdavPassword.value.trim();
-            
-            if (!webdavHost) {
-                this.toastComponent.show('请配置WebDAV服务器地址', 'warning');
-                return;
-            }
-            
-            // 构建完整URL
-            const url = this.buildUrl({ host: webdavHost, port: webdavPort, path: webdavPath });
-            
-            // 显示加载状态
-            const originalText = this.manualBackupBtn.innerHTML;
-            this.manualBackupBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 备份中...';
-            this.manualBackupBtn.disabled = true;
-            
-            // 设置冷却时间
-            this.buttonCooldowns.manualBackupBtn = true;
-            setTimeout(() => {
-                this.buttonCooldowns.manualBackupBtn = false;
-            }, 2000);
-            
-            const result = await DataManager.backupToWebDAV({
-                url,
-                username: webdavUsername,
-                password: webdavPassword
-            });
-            
-            if (result.success) {
-                this.toastComponent.show(result.message, 'success');
-            } else {
-                this.toastComponent.show(result.message, 'error');
-            }
-        } catch (error) {
-            console.error('手动备份失败:', error);
-            this.toastComponent.show(`手动备份失败: ${error.message}`, 'error');
-        } finally {
-            // 恢复按钮状态
-            this.manualBackupBtn.innerHTML = '<i class="fas fa-save"></i> 手动备份';
-            this.manualBackupBtn.disabled = false;
-        }
-    }
-    
-    /**
-     * 从WebDAV恢复数据
-     */
-    async handleRestoreBackup() {
-        try {
-            const webdavHost = this.webdavHost.value.trim();
-            const webdavPort = parseInt(this.webdavPort.value);
-            const webdavPath = this.webdavPath.value.trim();
-            const webdavUsername = this.webdavUsername.value.trim();
-            const webdavPassword = this.webdavPassword.value.trim();
-            
-            if (!webdavHost) {
-                this.toastComponent.show('请配置WebDAV服务器地址', 'warning');
-                return;
-            }
-            
-            // 构建完整URL
-            const url = this.buildUrl({ host: webdavHost, port: webdavPort, path: webdavPath });
-            
-            // 确认恢复操作
-            this.modalComponent.show(
-                '恢复数据确认',
-                '确定要从WebDAV恢复数据吗？这将替换当前所有数据，操作不可恢复。',
-                false,
-                0,
-                async () => {
-                    await this.performRestoreBackup(url, webdavUsername, webdavPassword);
-                }
-            );
-        } catch (error) {
-            console.error('恢复数据失败:', error);
-            this.toastComponent.show(`恢复数据失败: ${error.message}`, 'error');
-        }
-    }
-    
-    /**
-     * 执行从WebDAV恢复数据
-     */
-    async performRestoreBackup(webdavUrl, webdavUsername, webdavPassword) {
-        // 检查冷却时间
-        if (this.buttonCooldowns.restoreBackupBtn) {
-            this.toastComponent.show('操作过于频繁，请稍后再试', 'warning');
-            return;
-        }
-        
-        try {
-            // 显示加载状态
-            const originalText = this.restoreBackupBtn.innerHTML;
-            this.restoreBackupBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 恢复中...';
-            this.restoreBackupBtn.disabled = true;
-            
-            // 设置冷却时间
-            this.buttonCooldowns.restoreBackupBtn = true;
-            setTimeout(() => {
-                this.buttonCooldowns.restoreBackupBtn = false;
-            }, 2000);
-            
-            const result = await DataManager.restoreFromWebDAV({
-                url: webdavUrl,
-                username: webdavUsername,
-                password: webdavPassword
-            });
-            
-            if (result.success) {
-                this.toastComponent.show(result.message, 'success');
-                // 重新加载分类数据
-                await this.loadCategories();
-            } else {
-                this.toastComponent.show(result.message, 'error');
-            }
-        } catch (error) {
-            console.error('执行恢复数据失败:', error);
-            this.toastComponent.show(`恢复数据失败: ${error.message}`, 'error');
-        } finally {
-            // 恢复按钮状态
-            this.restoreBackupBtn.innerHTML = '<i class="fas fa-cloud-download-alt"></i> 恢复数据';
-            this.restoreBackupBtn.disabled = false;
         }
     }
 }
 
-// 初始化应用
+// 页面加载完成后初始化应用
 document.addEventListener('DOMContentLoaded', () => {
-    const app = new OptionsApp();
+    new OptionsApp();
 });

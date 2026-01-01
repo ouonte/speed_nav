@@ -1,0 +1,80 @@
+/* 悬浮窗样式 */
+.floating-widget {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    width: 15px; /* 调整为更窄的宽度，比文字稍微大一点 */
+    height: 50px; /* 调整为更合适的高度 */
+    background-color: var(--bg-primary, #ffffff);
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 25px 0 0 25px; /* 左侧椭圆，右侧平边，调整为适配高度 */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    z-index: 9999;
+    transition: all 0.3s ease;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 0; /* 留点白，增加内边距 */
+}
+
+/* 悬浮窗切换按钮样式 */
+.toggle-button {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 20px;
+    color: #666666;
+    transition: all 0.3s ease;
+}
+
+/* 悬浮窗扩展内容样式 */
+.expanded-content {
+    display: none;
+    padding: 0 10px;
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary, #333333);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    align-items: center;
+}
+
+/* 鼠标悬停效果 */
+.floating-widget:hover {
+    background-color: var(--bg-secondary, #f5f5f5);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50%) translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(-50%) translateX(0);
+    }
+}
+
+.floating-widget {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* 深色主题支持 */
+@media (prefers-color-scheme: dark) {
+    .floating-widget {
+        background-color: var(--bg-primary-dark, #2d2d2d);
+        border-color: var(--border-color-dark, #404040);
+    }
+    
+    .floating-widget:hover {
+        background-color: var(--bg-secondary-dark, #3d3d3d);
+    }
+}

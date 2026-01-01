@@ -20,6 +20,8 @@
         <nav class="tabs-nav">
             <button class="tab-btn active" data-tab="categories">分类管理</button>
             <button class="tab-btn" data-tab="data">数据管理</button>
+            <button class="tab-btn" data-tab="backup">备份管理</button>
+            <button class="tab-btn" data-tab="features">功能设置</button>
             <button class="tab-btn" data-tab="about">关于</button>
         </nav>
 
@@ -52,21 +54,7 @@
                     </div>
                 </div>
 
-                <!-- 一级分类管理 -->
-                <div class="card">
-                    <h3 class="card-title">一级分类管理</h3>
-                    <div class="card-content">
-                        <div id="categoriesList" class="categories-list"></div>
-                    </div>
-                </div>
 
-                <!-- 二级分类管理 -->
-                <div class="card">
-                    <h3 class="card-title">二级分类管理</h3>
-                    <div class="card-content">
-                        <div id="subcategoriesList" class="categories-list"></div>
-                    </div>
-                </div>
             </div>
 
             <!-- 数据管理标签页 -->
@@ -78,11 +66,75 @@
                         导出数据
                     </h3>
                     <div class="card-content">
-                        <p class="card-description">将当前导航数据导出为JSON文件，用于备份或迁移到其他浏览器。</p>
-                        <button class="btn btn-primary" id="exportBtn">
-                            <i class="fas fa-file-export"></i>
-                            导出数据
-                        </button>
+                        <p class="card-description">将导航数据导出为JSON或数据库文件，用于备份或迁移。</p>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="exportType">导出类型</label>
+                                <select id="exportType" class="form-select">
+                                    <option value="json">JSON文件</option>
+                                    <option value="database">数据库SQL</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="exportSource">源存储类型</label>
+                                <select id="exportSource" class="form-select">
+                                    <option value="local">本地存储</option>
+                                    <option value="indexeddb">IndexedDB</option>
+                                    <option value="mysql">MySQL数据库</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button class="btn btn-primary" id="exportBtn">
+                                <i class="fas fa-file-export"></i>
+                                导出数据
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 数据同步 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-sync-alt"></i>
+                        数据同步
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description">在不同存储类型之间同步数据，实现数据备份和迁移。</p>
+                        
+                        <div class="sync-config">
+                            <div class="form-group">
+                                <label for="syncSource">从</label>
+                                <select id="syncSource" class="form-select">
+                                    <option value="local">本地存储</option>
+                                    <option value="indexeddb">IndexedDB</option>
+                                    <option value="mysql">MySQL数据库</option>
+                                </select>
+                            </div>
+                            
+                            <div class="sync-arrow">
+                                <i class="fas fa-arrow-right"></i>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="syncTarget">到</label>
+                                <select id="syncTarget" class="form-select">
+                                    <option value="local">本地存储</option>
+                                    <option value="indexeddb">IndexedDB</option>
+                                    <option value="mysql">MySQL数据库</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button class="btn btn-primary" id="syncDataBtn">
+                                <i class="fas fa-sync-alt"></i>
+                                同步数据
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -108,6 +160,76 @@
                     </div>
                 </div>
 
+                <!-- 存储管理配置 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-database"></i>
+                        存储管理配置
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description">配置数据存储方式，支持本地存储、IndexedDB和MySQL数据库</p>
+                        
+                        <!-- 存储类型选择 -->
+                        <div class="form-group">
+                            <label>存储类型</label>
+                            <div class="radio-group">
+                                <label class="radio-item">
+                                    <input type="radio" name="storageType" value="local" checked>
+                                    <span class="radio-label">本地存储</span>
+                                    <small class="radio-hint">使用浏览器本地存储，适合单机使用</small>
+                                </label>
+                                <label class="radio-item">
+                                    <input type="radio" name="storageType" value="indexeddb">
+                                    <span class="radio-label">IndexedDB</span>
+                                    <small class="radio-hint">使用浏览器IndexedDB存储，适合单机使用，支持更大数据量</small>
+                                </label>
+                                <label class="radio-item">
+                                    <input type="radio" name="storageType" value="mysql">
+                                    <span class="radio-label">MySQL数据库</span>
+                                    <small class="radio-hint">使用远程MySQL数据库存储，支持多设备同步</small>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- MySQL数据库配置 -->
+                        <div class="mysql-config" id="mysqlConfigSection" style="display: none;">
+                            <h4 class="mysql-config-title">MySQL数据库配置</h4>
+                            
+                            <div class="form-group">
+                                <label for="mysqlHost">主机地址</label>
+                                <input type="text" id="mysqlHost" class="form-input" placeholder="输入MySQL主机地址，例如：localhost">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="mysqlPort">端口</label>
+                                <input type="number" id="mysqlPort" class="form-input" placeholder="输入MySQL端口，默认3306" min="1" max="65535" value="3306">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="mysqlUser">用户名</label>
+                                <input type="text" id="mysqlUser" class="form-input" placeholder="输入MySQL用户名">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="mysqlPassword">密码</label>
+                                <input type="password" id="mysqlPassword" class="form-input" placeholder="输入MySQL密码">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="mysqlDatabase">数据库名</label>
+                                <input type="text" id="mysqlDatabase" class="form-input" placeholder="输入MySQL数据库名，例如：cloudhut">
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button class="btn btn-primary" id="saveMysqlConfig">保存配置</button>
+                                <button class="btn btn-secondary" id="testMysqlConnection">测试连接</button>
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="saveStorageTypeBtn">保存存储类型</button>
+                    </div>
+                </div>
+                
                 <!-- 图标获取配置 -->
                 <div class="card">
                     <h3 class="card-title">
@@ -158,7 +280,27 @@
                         <button class="btn btn-primary" id="saveFaviconApiBtn">保存配置</button>
                     </div>
                 </div>
+                
 
+
+                <!-- 重置数据 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-redo"></i>
+                        重置数据
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description text-warning">将数据重置为默认值，此操作不可恢复。</p>
+                        <button class="btn btn-danger" id="resetBtn">
+                            <i class="fas fa-trash"></i>
+                            重置为默认数据
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 备份管理标签页 -->
+            <div class="tab-content" id="backup-tab">
                 <!-- 云备份功能 -->
                 <div class="card">
                     <h3 class="card-title">
@@ -232,23 +374,53 @@
                         </div>
                     </div>
                 </div>
-                
-                <!-- 重置数据 -->
+
+                <!-- 备份列表 -->
                 <div class="card">
                     <h3 class="card-title">
-                        <i class="fas fa-redo"></i>
-                        重置数据
+                        <i class="fas fa-history"></i>
+                        备份列表
                     </h3>
                     <div class="card-content">
-                        <p class="card-description text-warning">将数据重置为默认值，此操作不可恢复。</p>
-                        <button class="btn btn-danger" id="resetBtn">
-                            <i class="fas fa-trash"></i>
-                            重置为默认数据
-                        </button>
+                        <div id="backupsList" class="backups-list">
+                            <div class="empty-backups">暂无备份记录</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
+            <!-- 功能设置标签页 -->
+            <div class="tab-content" id="features-tab">
+                <!-- 悬浮窗配置 -->
+                <div class="card">
+                    <h3 class="card-title">
+                        <i class="fas fa-window-restore"></i>
+                        悬浮窗配置
+                    </h3>
+                    <div class="card-content">
+                        <p class="card-description">配置悬浮窗的显示状态</p>
+                        
+                        <!-- 悬浮窗开关 -->
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="floatingWidgetEnabled" checked>
+                                <span>启用悬浮窗</span>
+                            </label>
+                            <small class="form-hint">开启或关闭悬浮窗功能</small>
+                        </div>
+                        
+                        <!-- 自动收缩时间 -->
+                        <div class="form-group">
+                            <label for="autoCollapseTime">自动收缩时间（秒）</label>
+                            <input type="number" id="autoCollapseTime" class="form-input" placeholder="输入自动收缩时间" min="1" max="60" value="3">
+                            <small class="form-hint">设置悬浮窗展开后自动收缩的时间，单位：秒</small>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="saveFloatingWidgetConfig">保存配置</button>
+                    </div>
+                </div>
+            </div>
+            
             <!-- 关于标签页 -->
             <div class="tab-content" id="about-tab">
                 <div class="card">

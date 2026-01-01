@@ -1,0 +1,144 @@
+-- CloudHut 导航数据库 - 默认导入文件
+-- 版本: 1.0
+-- 用途: 便捷导入数据库，包含基础表结构和初始数据
+
+-- 创建数据库（如果不存在）
+CREATE DATABASE IF NOT EXISTS cloudhut CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- 使用数据库
+USE cloudhut;
+
+-- 创建网站表
+CREATE TABLE IF NOT EXISTS websites (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    url VARCHAR(255) NOT NULL,
+    desc TEXT,
+    tags JSON,
+    detail TEXT,
+    mainCategoryId VARCHAR(255) NOT NULL,
+    categoryId VARCHAR(255) NOT NULL,
+    subCategoryId VARCHAR(255) NOT NULL,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_url (url)
+);
+
+-- 创建图标缓存表
+CREATE TABLE IF NOT EXISTS favicons (
+    url VARCHAR(255) PRIMARY KEY,
+    iconUrl VARCHAR(255) NOT NULL,
+    timestamp BIGINT NOT NULL,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建同步元数据表
+CREATE TABLE IF NOT EXISTS sync_metadata (
+    key VARCHAR(255) PRIMARY KEY,
+    value JSON,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 创建主分类表
+CREATE TABLE IF NOT EXISTS main_categories (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    icon VARCHAR(255) NOT NULL DEFAULT 'fas fa-compass',
+    orderIndex INT DEFAULT 0,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 创建一级分类表
+CREATE TABLE IF NOT EXISTS categories (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    mainCategoryId VARCHAR(255) NOT NULL,
+    orderIndex INT DEFAULT 0,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (mainCategoryId) REFERENCES main_categories(id) ON DELETE CASCADE
+);
+
+-- 创建二级分类表
+CREATE TABLE IF NOT EXISTS sub_categories (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    categoryId VARCHAR(255) NOT NULL,
+    orderIndex INT DEFAULT 0,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (categoryId) REFERENCES categories(id) ON DELETE CASCADE
+);
+
+-- 插入初始主分类数据
+INSERT INTO main_categories (id, name, icon, orderIndex) VALUES
+('general', '综合导航', 'fas fa-compass', 0),
+('ai', 'AI类导航', 'fas fa-robot', 1)
+ON DUPLICATE KEY UPDATE
+name = VALUES(name),
+icon = VALUES(icon),
+orderIndex = VALUES(orderIndex);
+
+-- 插入初始一级分类数据
+INSERT INTO categories (id, name, mainCategoryId, orderIndex) VALUES
+('daily', '日常办公', 'general', 0),
+('entertainment', '娱乐休闲', 'general', 1),
+('ai_tools', 'AI工具', 'ai', 0)
+ON DUPLICATE KEY UPDATE
+name = VALUES(name),
+mainCategoryId = VALUES(mainCategoryId),
+orderIndex = VALUES(orderIndex);
+
+-- 插入初始二级分类数据
+INSERT INTO sub_categories (id, name, categoryId, orderIndex) VALUES
+('office', 'Office 在线', 'daily', 0),
+('cloud', '云盘存储', 'daily', 1),
+('video', '视频平台', 'entertainment', 0),
+('chat', 'AI聊天', 'ai_tools', 0),
+('image', 'AI绘画', 'ai_tools', 1)
+ON DUPLICATE KEY UPDATE
+name = VALUES(name),
+categoryId = VALUES(categoryId),
+orderIndex = VALUES(orderIndex);
+
+-- 插入初始网站数据
+INSERT INTO websites (id, name, url, desc, tags, detail, mainCategoryId, categoryId, subCategoryId) VALUES
+('1', 'Google Docs', 'https://docs.google.com', '在线文档编辑工具', '["文档", "在线", "办公"]', 'Google推出的免费在线文档编辑工具，支持多人协作编辑。', 'general', 'daily', 'office'),
+('2', 'Microsoft 365', 'https://office.com', '微软办公套件', '["办公", "套件", "云服务"]', '微软推出的云端办公套件，包含Word、Excel、PowerPoint等工具。', 'general', 'daily', 'office'),
+('3', 'WPS 在线', 'https://wps.cn', '国产在线办公软件', '["国产", "办公", "在线"]', '金山软件推出的国产在线办公软件，支持多种文档格式。', 'general', 'daily', 'office'),
+('4', '百度网盘', 'https://pan.baidu.com', '大容量云存储服务', '["云存储", "百度", "大容量"]', '百度推出的云存储服务，提供大容量存储空间和文件分享功能。', 'general', 'daily', 'cloud'),
+('5', '阿里云盘', 'https://www.aliyundrive.com', '阿里云旗下云存储', '["云存储", "阿里", "高速"]', '阿里云推出的云存储服务，以高速下载和大存储空间著称。', 'general', 'daily', 'cloud'),
+('6', '腾讯微云', 'https://www.weiyun.com', '腾讯旗下云存储', '["云存储", "腾讯", "便捷"]', '腾讯推出的云存储服务，与QQ、微信深度集成。', 'general', 'daily', 'cloud'),
+('7', 'B站', 'https://www.bilibili.com', '哔哩哔哩弹幕视频', '["视频", "弹幕", "年轻"]', '中国年轻一代高度聚集的文化社区和视频平台。', 'general', 'entertainment', 'video'),
+('8', '优酷', 'https://www.youku.com', '优酷视频', '["视频", "剧集", "综艺"]', '阿里巴巴旗下的视频平台，提供海量视频内容。', 'general', 'entertainment', 'video'),
+('9', 'ChatGPT', 'https://chat.openai.com', 'OpenAI聊天机器人', '["AI", "聊天", "OpenAI"]', 'OpenAI开发的先进聊天机器人，能够进行自然语言对话。', 'ai', 'ai_tools', 'chat'),
+('10', '文心一言', 'https://yiyan.baidu.com', '百度文心一言', '["AI", "聊天", "百度"]', '百度开发的大语言模型，提供多种AI服务。', 'ai', 'ai_tools', 'chat'),
+('11', 'MidJourney', 'https://www.midjourney.com', 'AI绘画工具', '["AI", "绘画", "图像"]', '能够根据文字描述生成高质量图像的AI工具。', 'ai', 'ai_tools', 'image')
+ON DUPLICATE KEY UPDATE
+name = VALUES(name),
+url = VALUES(url),
+desc = VALUES(desc),
+tags = VALUES(tags),
+detail = VALUES(detail),
+mainCategoryId = VALUES(mainCategoryId),
+categoryId = VALUES(categoryId),
+subCategoryId = VALUES(subCategoryId);
+
+-- 插入初始同步元数据
+INSERT INTO sync_metadata (key, value) VALUES
+('last_cloud_sync', '0'),
+('database_version', '1.0')
+ON DUPLICATE KEY UPDATE
+value = VALUES(value);
+
+-- 创建索引（优化查询性能）
+CREATE INDEX IF NOT EXISTS idx_websites_category ON websites(mainCategoryId, categoryId, subCategoryId);
+CREATE INDEX IF NOT EXISTS idx_websites_url ON websites(url);
+CREATE INDEX IF NOT EXISTS idx_favicons_timestamp ON favicons(timestamp);
+CREATE INDEX IF NOT EXISTS idx_categories_main ON categories(mainCategoryId);
+CREATE INDEX IF NOT EXISTS idx_sub_categories_category ON sub_categories(categoryId);
+
+-- 数据库导入完成提示
+SELECT 'CloudHut 导航数据库导入完成' AS message;
+SELECT '数据库包含 2 个主分类、3 个一级分类、5 个二级分类和 11 个网站' AS summary;

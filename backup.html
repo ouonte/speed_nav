@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>速导航 - 云备份管理</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/options.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="title">
+                <i class="fas fa-compass"></i>
+                速导航 - 云备份管理
+            </h1>
+        </header>
+
+        <!-- 返回按钮 -->
+        <div class="back-button-container">
+            <button class="btn btn-secondary" id="backToOptionsBtn">
+                <i class="fas fa-arrow-left"></i>
+                返回设置页
+            </button>
+        </div>
+
+        <main class="main-content">
+            <!-- 云备份功能 -->
+            <div class="card">
+                <h3 class="card-title">
+                    <i class="fas fa-cloud"></i>
+                    云备份管理
+                </h3>
+                <div class="card-content">
+                    <p class="card-description">通过WebDAV备份和恢复导航数据</p>
+                    
+                    <!-- WebDAV配置 -->
+                    <div class="form-group">
+                        <label>WebDAV服务器配置</label>
+                        <div class="webdav-config-grid">
+                            <div class="form-group">
+                                <label for="webdavHost">服务器地址</label>
+                                <input type="text" id="webdavHost" class="form-input" placeholder="例如：example.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="webdavPort">端口</label>
+                                <input type="number" id="webdavPort" class="form-input" placeholder="443" min="1" max="65535" value="443">
+                            </div>
+                            <div class="form-group">
+                                <label for="webdavPath">路径</label>
+                                <input type="text" id="webdavPath" class="form-input" placeholder="/dav" value="/dav">
+                            </div>
+                        </div>
+                        <small class="form-hint">WebDAV服务器的地址、端口和路径配置</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="webdavUsername">用户名</label>
+                        <input type="text" id="webdavUsername" class="form-input" placeholder="输入WebDAV用户名">
+                        <small class="form-hint">WebDAV服务器的用户名</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="webdavPassword">密码</label>
+                        <input type="password" id="webdavPassword" class="form-input" placeholder="输入WebDAV密码">
+                        <small class="form-hint">WebDAV服务器的密码</small>
+                    </div>
+                    
+                    <!-- 备份配置 -->
+                    <div class="form-group">
+                        <label>备份配置</label>
+                        <div class="backup-config">
+                            <div class="form-group-inline">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="autoBackupEnabled">
+                                    <span>启用自动备份</span>
+                                </label>
+                                <select id="autoBackupInterval" class="form-select">
+                                    <option value="daily">每日备份</option>
+                                    <option value="weekly">每周备份</option>
+                                    <option value="monthly">每月备份</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="backupTime">备份时间（小时）</label>
+                                <input type="number" id="backupTime" class="form-input" min="0" max="23" value="0">
+                                <small class="form-hint">设置自动备份的时间，默认是凌晨0点</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 备份操作 -->
+                    <div class="form-actions">
+                        <button class="btn btn-primary" id="saveWebdavConfig">保存配置</button>
+                        <button class="btn btn-secondary" id="manualBackupBtn">手动备份</button>
+                        <button class="btn btn-secondary" id="restoreBackupBtn">恢复数据</button>
+                        <button class="btn btn-danger" id="testWebdavConnection">测试连接</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 备份列表 -->
+            <div class="card">
+                <h3 class="card-title">
+                    <i class="fas fa-history"></i>
+                    备份列表
+                </h3>
+                <div class="card-content">
+                    <div id="backupsList" class="backups-list">
+                        <div class="empty-backups">暂无备份记录</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 模态框 -->
+        <div id="modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle" class="modal-title">操作确认</h3>
+                    <button id="closeModal" class="modal-close">&times;</button>
+                </div>
+                <div id="modalBody" class="modal-body">
+                    <p id="modalMessage">确认执行此操作吗？</p>
+                    <div id="countdown" class="countdown" style="display: none;">
+                        <span id="countdownText">5</span>秒后自动执行...
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancelBtn" class="btn btn-secondary">取消</button>
+                    <button id="confirmBtn" class="btn btn-primary">确认</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 消息提示容器 -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script type="module" src="js/backup.js"></script>
+</body>
+</html>

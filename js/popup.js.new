@@ -1,0 +1,1795 @@
+// 弹出页面主脚本 - 组件化重构
+import { DataManager, BrowserAPI } from './dataManager.js';
+import { DatabaseManager } from './db.js';
+import { IconManager, iconManager } from './iconManager.js';
+
+// 使用DataManager中已有的BrowserAPI类，避免代码重复
+// 这里只需要确保DataManager.js已经正确导出BrowserAPI类
+
+// HTML转义函数
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 内存缓存，用于缓存已获取的图标，减少对localStorage的访问
+let faviconMemoryCache = new Map();
+
+// 图标缓存配置
+const FAVICON_CACHE_CONFIG = {
+  MEMORY_TTL: 24 * 60 * 60 * 1000, // 内存缓存24小时
+  LOCAL_STORAGE_TTL: 7 * 24 * 60 * 60 * 1000, // 本地存储缓存7天
+  MAX_RETRIES: 1, // 重试次数
+  TIMEOUTS: {
+    LOCAL: 2000, // 本地favicon.ico超时2秒
+    HTML: 3000, // HTML提取超时3秒
+    API: 4000, // API请求超时4秒
+    GOOGLE: 3000 // Google服务超时3秒
+  }
+};
+
+// 获取网站图标URL - 优化版本，提高性能和可靠性
+async function getFaviconUrl(url) {
+    try {
+        if (!url) {
+            console.error('获取favicon失败: URL为空');
+            return '';
+        }
+        
+        // 确保URL有协议头
+        let processedUrl = url;
+        if (!processedUrl.startsWith('http://') && !processedUrl.startsWith('https://')) {
+            processedUrl = `https://${processedUrl}`;
+        }
+        
+        // 移除URL中可能存在的空格和特殊字符
+        const cleanUrl = processedUrl.replace(/[`\s]/g, '');
+        
+        // 生成缓存键
+        const cacheKey = `favicon_${btoa(cleanUrl)}`;
+        
+        // 1. 首先检查内存缓存
+        if (faviconMemoryCache.has(cacheKey)) {
+            const cached = faviconMemoryCache.get(cacheKey);
+            const now = Date.now();
+            if (now < cached.expires) {
+                return cached.url;
+            } else {
+                // 内存缓存已过期，删除它
+                faviconMemoryCache.delete(cacheKey);
+            }
+        }
+        
+        // 2. 检查数据库缓存
+        const dbCachedFavicon = await DatabaseManager.getFavicon(cleanUrl);
+        if (dbCachedFavicon) {
+            // 同时更新到内存缓存和localStorage
+            const now = Date.now();
+            const memoryExpires = now + FAVICON_CACHE_CONFIG.MEMORY_TTL;
+            const localStorageExpires = now + FAVICON_CACHE_CONFIG.LOCAL_STORAGE_TTL;
+            
+            faviconMemoryCache.set(cacheKey, { url: dbCachedFavicon, expires: memoryExpires });
+            localStorage.setItem(cacheKey, dbCachedFavicon);
+            localStorage.setItem(`${cacheKey}_expires`, localStorageExpires.toString());
+            
+            return dbCachedFavicon;
+        }
+        
+        // 3. 检查localStorage缓存
+        const cachedFavicon = localStorage.getItem(cacheKey);
+        const cachedExpires = localStorage.getItem(`${cacheKey}_expires`);
+        
+        if (cachedFavicon && cachedExpires) {
+            const now = Date.now();
+            const expires = parseInt(cachedExpires);
+            if (now < expires) {
+                // 同时更新到内存缓存和数据库缓存
+                faviconMemoryCache.set(cacheKey, { url: cachedFavicon, expires: now + FAVICON_CACHE_CONFIG.MEMORY_TTL });
+                await DatabaseManager.saveFavicon(cleanUrl, cachedFavicon);
+                
+                return cachedFavicon;
+            } else {
+                // 缓存已过期，删除它
+                localStorage.removeItem(cacheKey);
+                localStorage.removeItem(`${cacheKey}_expires`);
+            }
+        }
+        
+        // 尝试加载图片，返回Promise
+        function tryLoadImage(iconUrl, timeout = 5000) {
+            // 根据URL类型调整超时时间
+            // 本地favicon.ico使用较短超时时间
+            if (iconUrl.includes('/favicon.ico')) {
+                timeout = Math.min(timeout, 2000); // 最大2秒
+            } else if (iconUrl.includes('google.com/s2/favicons')) {
+                // Google服务使用中等超时时间
+                timeout = Math.min(timeout, 3000); // 最大3秒
+            }
+            
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const timer = setTimeout(() => {
+                    reject(new Error(`Image load timeout: ${iconUrl}`));
+                }, timeout);
+                
+                img.onload = () => {
+                    clearTimeout(timer);
+                    resolve(iconUrl);
+                };
+                
+                img.onerror = () => {
+                    clearTimeout(timer);
+                    reject(new Error(`Failed to load image: ${iconUrl}`));
+                };
+                
+                // 添加crossOrigin属性，避免跨域问题
+                img.crossOrigin = 'anonymous';
+                img.src = iconUrl;
+            });
+        }
+        
+        // 使用正则表达式从网页中提取图标
+        async function extractIconWithRegex(url, timeout = 5000) {
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    timeout: timeout,
+                    headers: {
+                        'Accept': 'text/html'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch page: ${response.status}`);
+                }
+                
+                const html = await response.text();
+                
+                // 内置的正则表达式，用于匹配不同类型的图标
+                const regexPatterns = [
+                    // 标准link rel="icon"
+                    /<link[^>]*rel=["']icon["'][^>]*href=["']([^"']+)["'][^>]*>/i,
+                    // 苹果触摸图标
+                    /<link[^>]*rel=["']apple-touch-icon["'][^>]*href=["']([^"']+)["'][^>]*>/i,
+                    // 快捷图标
+                    /<link[^>]*rel=["']shortcut icon["'][^>]*href=["']([^"']+)["'][^>]*>/i,
+                    // 更大的图标
+                    /<link[^>]*rel=["']apple-touch-icon-precomposed["'][^>]*href=["']([^"']+)["'][^>]*>/i
+                ];
+                
+                let matchedUrl = null;
+                
+                // 尝试每个正则表达式
+                for (const pattern of regexPatterns) {
+                    const match = html.match(pattern);
+                    if (match && match[1]) {
+                        matchedUrl = match[1];
+                        break;
+                    }
+                }
+                
+                if (matchedUrl) {
+                    // 处理相对URL
+                    if (!matchedUrl.startsWith('http://') && !matchedUrl.startsWith('https://')) {
+                        const baseUrl = new URL(url);
+                        matchedUrl = new URL(matchedUrl, baseUrl).href;
+                    }
+                    
+                    console.log(`使用正则表达式提取图标: ${url} → ${matchedUrl}`);
+                    return matchedUrl;
+                }
+            } catch (error) {
+                console.error(`使用正则表达式提取图标失败: ${url}`, error.message);
+            }
+            return null;
+        }
+        
+        let finalUrl = '';
+        const urlObj = new URL(cleanUrl);
+        const domain = urlObj.hostname;
+        const protocol = urlObj.protocol;
+        
+        // 从全局配置中获取，避免重复调用DataManager.getAllData()
+        // 这些配置应该在插件初始化时已经加载到全局变量中
+        const faviconApi = window.faviconConfig?.faviconApi || 'https://icon.bqb.cool?url=';
+        const faviconApiBackup = window.faviconConfig?.faviconApiBackup || 'https://icon.bqb.cool?url=';
+        const apiTimeout = window.faviconConfig?.apiTimeout || 5000;
+        
+        // 构建所有可能的图标获取方法，按照优先级排序
+        const iconMethods = [];
+        
+        // 1. 首选：直接访问网站的/favicon.ico
+        iconMethods.push({
+            type: 'local',
+            url: `${protocol}//${domain}/favicon.ico`,
+            name: '本地favicon.ico'
+        });
+        
+        // 2. 次选：尝试从网页HTML中提取图标
+        iconMethods.push({
+            type: 'html',
+            name: 'HTML提取图标'
+        });
+        
+        if (faviconApi) {
+            // 3. 主选：使用主API获取
+            iconMethods.push({
+                type: 'api',
+                url: `${faviconApi}${encodeURIComponent(cleanUrl)}`,
+                name: '主API'
+            });
+        }
+        
+        if (faviconApiBackup) {
+            // 4. 备选：使用备选API获取
+            iconMethods.push({
+                type: 'api',
+                url: `${faviconApiBackup}${encodeURIComponent(cleanUrl)}`,
+                name: '备选API'
+            });
+        }
+        
+        // 5. 最终备用：使用Google服务
+        iconMethods.push({
+            type: 'api',
+            url: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+            name: 'Google服务'
+        });
+        
+        // 尝试每个方法，直到成功
+        for (const method of iconMethods) {
+            try {
+                let iconUrl = '';
+                
+                if (method.type === 'html') {
+                    // 处理HTML提取图标方法
+                    console.log(`尝试获取图标 [${method.name}]: ${url}`);
+                    iconUrl = await extractIconWithRegex(cleanUrl, apiTimeout);
+                    if (iconUrl) {
+                        // 验证提取的图标是否可访问
+                        await tryLoadImage(iconUrl, apiTimeout);
+                        console.log(`成功获取图标 [${method.name}]: ${url} → ${iconUrl}`);
+                        finalUrl = iconUrl;
+                        break; // 获取成功，跳出循环
+                    }
+                } else {
+                    // 处理其他类型方法（local, api）
+                    console.log(`尝试获取图标 [${method.name}]: ${url} → ${method.url}`);
+                    
+                    // 直接加载图标URL
+                    await tryLoadImage(method.url, apiTimeout);
+                    iconUrl = method.url;
+                    
+                    finalUrl = iconUrl;
+                    console.log(`成功获取图标 [${method.name}]: ${url} → ${iconUrl}`);
+                    break; // 获取成功，跳出循环
+                }
+            } catch (error) {
+                console.error(`获取图标失败 [${method.name}]: ${url}`, error.message);
+                // 继续尝试下一个方法
+            }
+        }
+        
+        if (finalUrl) {
+            // 计算过期时间（7天）
+            const expires = Date.now() + 7 * 24 * 60 * 60 * 1000;
+            
+            // 保存到内存缓存
+            faviconMemoryCache.set(cacheKey, { url: finalUrl, expires });
+            
+            // 保存到本地缓存，有效期为7天
+            localStorage.setItem(cacheKey, finalUrl);
+            localStorage.setItem(`${cacheKey}_expires`, expires.toString());
+            
+            // 保存到数据库缓存
+            await DatabaseManager.saveFavicon(cleanUrl, finalUrl);
+            
+            return finalUrl;
+        } else {
+            // 所有方法都失败，返回空字符串，让浏览器显示默认图标
+            console.error(`所有方法获取favicon都失败: ${url}`);
+            return '';
+        }
+    } catch (error) {
+        console.error('获取favicon失败:', url, error.message);
+        return '';
+    }
+}
+
+// 添加默认图标样式
+function addDefaultIconStyles() {
+    // 检查是否已经添加过样式
+    if (!document.getElementById('default-icon-styles')) {
+        const style = document.createElement('style');
+        style.id = 'default-icon-styles';
+        style.textContent = `
+            .website-icon {
+                width: auto;
+                height: auto;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                margin-right: 8px;
+                flex-shrink: 0;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+                /* 移除背景色，使用透明背景 */
+                background-color: transparent;
+            }
+            .website-icon i {
+                font-size: 24px; /* 控制错误图标的大小 */
+                color: var(--text-muted); /* 控制错误图标的颜色 */
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .website-icon img {
+                width: 24px;
+                height: 24px;
+                object-fit: contain;
+                border-radius: 4px;
+                transition: transform 0.2s ease;
+            }
+            .website-icon .text-icon {
+                font-size: 12px;
+                font-weight: var(--font-weight-semibold);
+                color: var(--text-primary);
+                line-height: 1;
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: none;
+                border-radius: 4px;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+// Toast通知组件
+// 先移除旧的toast元素
+const oldToast = document.getElementById('toast');
+if (oldToast) {
+    oldToast.remove();
+}
+
+// Toast通知组件 - 支持多个提示实例
+class Toast {
+    constructor() {
+        this.toastContainer = null;
+        this.init();
+        this.activeToasts = new Set(); // 存储当前活跃的可撤销提示ID
+        this.maxToasts = 3; // 最大可撤销提示数量
+        this.toastElements = new Map(); // 存储toast元素和相关信息
+    }
+
+    init() {
+        // 创建toast容器
+        this.toastContainer = document.createElement('div');
+        this.toastContainer.id = 'toast-container';
+        this.toastContainer.className = 'toast-container';
+        document.body.appendChild(this.toastContainer);
+        this.addStyles();
+    }
+
+    addStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .toast-container {
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                z-index: 1000;
+                max-height: 300px;
+                overflow: hidden;
+            }
+            
+            .toast {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 12px 20px;
+                background-color: #4caf50;
+                color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                font-size: 14px;
+                font-weight: 500;
+                opacity: 1;
+            }
+            
+            .toast.error {
+                background-color: #f44336;
+            }
+            
+            .toast.warning {
+                background-color: #ff9800;
+            }
+            
+            .toast.success {
+                background-color: #4caf50;
+            }
+            
+            .toast i {
+                font-size: 18px;
+            }
+            
+            .toast-actions {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-left: auto;
+            }
+            
+            .toast-countdown {
+                font-size: 12px;
+                opacity: 0.8;
+            }
+            
+            .toast-undo-btn {
+                background: rgba(255, 255, 255, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                color: white;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 12px;
+                cursor: pointer;
+            }
+            
+            .toast-undo-btn:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+            
+            .toast.hide {
+                display: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    bindEvents() {
+        // 绑定撤销按钮点击事件
+        this.toastElement.querySelector('.toast-undo-btn').addEventListener('click', () => {
+            this.handleUndo();
+        });
+    }
+
+    show(message, type = 'success', options = {}) {
+        // 检查可撤销提示数量限制
+        if (options.undoable) {
+            if (this.activeToasts.size >= this.maxToasts) {
+                return false; // 返回false表示无法显示更多可撤销提示
+            }
+        }
+        
+        // 创建新的toast元素
+        const toastId = `toast_${Date.now()}`;
+        const toastElement = document.createElement('div');
+        toastElement.className = `toast ${type}`;
+        toastElement.id = toastId;
+        
+        // 添加HTML结构
+        toastElement.innerHTML = `
+            <span class="toast-message">${message}</span>
+            <div class="toast-actions">
+                <span class="toast-countdown">3s</span>
+                <button class="toast-undo-btn">撤销</button>
+            </div>
+        `;
+        
+        // 添加到容器
+        this.toastContainer.appendChild(toastElement);
+        
+        // 显示/隐藏撤销操作区域
+        const actionsElement = toastElement.querySelector('.toast-actions');
+        const undoBtn = toastElement.querySelector('.toast-undo-btn');
+        const countdownElement = toastElement.querySelector('.toast-countdown');
+        
+        if (options.undoable) {
+            actionsElement.style.display = 'flex';
+            
+            // 添加到活跃列表
+            this.activeToasts.add(toastId);
+            
+            // 开始倒计时
+            this.startCountdown(toastId, countdownElement, options.onUndo);
+        } else {
+            actionsElement.style.display = 'none';
+            
+            // 非可撤销的toast 3秒后自动隐藏
+            const hideTimeout = setTimeout(() => {
+                this.hide(toastId);
+            }, 3000);
+            
+            // 保存toast信息
+            this.toastElements.set(toastId, {
+                element: toastElement,
+                hideTimeout: hideTimeout,
+                undoable: false
+            });
+        }
+        
+        return true; // 返回true表示成功显示
+    }
+    
+    startCountdown(toastId, countdownElement, onUndoCallback) {
+        let countdown = 3;
+        
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            countdownElement.textContent = `${countdown}s`;
+            
+            if (countdown <= 0) {
+                clearInterval(countdownInterval);
+                this.hide(toastId);
+            }
+        }, 1000);
+        
+        // 3秒后自动隐藏
+        const hideTimeout = setTimeout(() => {
+            clearInterval(countdownInterval);
+            this.hide(toastId);
+        }, 3000);
+        
+        // 绑定撤销按钮点击事件
+        const undoBtn = countdownElement.parentElement.querySelector('.toast-undo-btn');
+        undoBtn.addEventListener('click', () => {
+            if (onUndoCallback) {
+                onUndoCallback();
+            }
+            this.hide(toastId, countdownInterval, hideTimeout);
+        });
+        
+        // 保存toast信息
+        this.toastElements.set(toastId, {
+            element: document.getElementById(toastId),
+            countdownInterval: countdownInterval,
+            hideTimeout: hideTimeout,
+            undoable: true
+        });
+    }
+    
+    hide(toastId, countdownInterval = null, hideTimeout = null) {
+        const toastInfo = this.toastElements.get(toastId);
+        if (!toastInfo) return;
+        
+        // 清除定时器
+        if (countdownInterval) {
+            clearInterval(countdownInterval);
+        } else if (toastInfo.countdownInterval) {
+            clearInterval(toastInfo.countdownInterval);
+        }
+        
+        if (hideTimeout) {
+            clearTimeout(hideTimeout);
+        } else if (toastInfo.hideTimeout) {
+            clearTimeout(toastInfo.hideTimeout);
+        }
+        
+        // 从活跃列表中移除
+        if (toastInfo.undoable) {
+            this.activeToasts.delete(toastId);
+        }
+        
+        // 隐藏并移除元素
+        const toastElement = toastInfo.element;
+        toastElement.remove();
+        this.toastElements.delete(toastId);
+    }
+}
+
+// 上下文菜单组件
+class ContextMenu {
+    constructor(onAction) {
+        this.onAction = onAction;
+        this.menuElement = null;
+        this.currentTarget = null;
+        this.currentTargetType = null;
+        this.init();
+    }
+
+    init() {
+        this.createElement();
+        this.bindEvents();
+    }
+
+    createElement() {
+        this.menuElement = document.createElement('div');
+        this.menuElement.className = 'context-menu';
+        this.menuElement.innerHTML = `
+            <div class="menu-item" data-action="edit">
+                <i class="fas fa-edit"></i>
+                <span>编辑</span>
+            </div>
+            <div class="menu-item" data-action="update">
+                <i class="fas fa-sync-alt"></i>
+                <span>更新</span>
+            </div>
+            <div class="menu-item" data-action="delete">
+                <i class="fas fa-trash"></i>
+                <span>删除</span>
+            </div>
+        `;
+        document.body.appendChild(this.menuElement);
+        this.addStyles();
+    }
+
+    addStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .context-menu {
+                position: fixed;
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                z-index: 10000;
+                display: none;
+                min-width: 150px;
+                border: 1px solid var(--border-color);
+            }
+            
+            .menu-item {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 16px;
+                cursor: pointer;
+                font-size: var(--font-size-sm);
+            }
+            
+            .menu-item:hover {
+                background-color: var(--primary-light);
+                color: var(--primary-color);
+            }
+            
+            .menu-item i {
+                width: 16px;
+                text-align: center;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    bindEvents() {
+        // 阻止默认右键菜单
+        document.addEventListener('contextmenu', (e) => {
+            // 检查是否是网站卡片
+            const websiteCard = e.target.closest('.website-card');
+            if (websiteCard) {
+                e.preventDefault();
+                this.showMenu(e.clientX, e.clientY, websiteCard, 'website');
+                return;
+            }
+            
+            // 检查是否是一级导航项
+            const navItemPrimary = e.target.closest('.nav-item-primary');
+            if (navItemPrimary) {
+                e.preventDefault();
+                this.showMenu(e.clientX, e.clientY, navItemPrimary, 'category');
+                return;
+            }
+            
+            // 检查是否是二级导航项
+            const navItemSecondary = e.target.closest('.nav-item-secondary');
+            if (navItemSecondary) {
+                e.preventDefault();
+                this.showMenu(e.clientX, e.clientY, navItemSecondary, 'subcategory');
+                return;
+            }
+        });
+        
+        // 点击菜单项
+        this.menuElement.addEventListener('click', async (e) => {
+            const menuItem = e.target.closest('.menu-item');
+            if (menuItem) {
+                const action = menuItem.dataset.action;
+                if (this.currentTarget && this.onAction) {
+                    // 保存当前目标和类型，因为hideMenu会重置它们
+                    const target = this.currentTarget;
+                    const targetType = this.currentTargetType;
+                    
+                    // 先隐藏菜单，避免UI阻塞
+                    this.hideMenu();
+                    
+                    // 然后执行异步操作
+                    await this.onAction(action, target, targetType);
+                } else {
+                    this.hideMenu();
+                }
+            }
+        });
+        
+        // 点击其他地方关闭菜单
+        document.addEventListener('click', () => {
+            this.hideMenu();
+        });
+    }
+
+    showMenu(x, y, target, targetType) {
+        this.currentTarget = target;
+        this.currentTargetType = targetType;
+        this.menuElement.style.display = 'block';
+        this.menuElement.style.left = `${x}px`;
+        this.menuElement.style.top = `${y}px`;
+        
+        // 确保菜单不会超出屏幕
+        const menuRect = this.menuElement.getBoundingClientRect();
+        if (menuRect.right > window.innerWidth) {
+            this.menuElement.style.left = `${x - menuRect.width}px`;
+        }
+        if (menuRect.bottom > window.innerHeight) {
+            this.menuElement.style.top = `${y - menuRect.height}px`;
+        }
+    }
+
+    hideMenu() {
+        this.menuElement.style.display = 'none';
+        this.currentTarget = null;
+        this.currentTargetType = null;
+    }
+}
+
+// 网站卡片组件
+class WebsiteCard {
+    constructor(website, onClick, defaultIconType = 'globe') {
+        this.website = website;
+        this.onClick = onClick;
+        this.defaultIconType = defaultIconType;
+        this.element = this.createElement();
+    }
+
+    createElement() {
+        const card = document.createElement('div');
+        card.className = 'website-card';
+        card.dataset.websiteId = this.website.id;
+        
+        // 生成标签HTML
+        const tagsHtml = this.website.tags && this.website.tags.length > 0 
+            ? this.website.tags.map(tag => `<span class="website-tag">${escapeHtml(tag)}</span>`).join('')
+            : '';
+        
+        // 生成网站详情
+        const websiteDetail = this.website.detail || '';
+        
+        // 使用默认图标初始化
+        const iconHtml = this.getDefaultIconHtml();
+        
+        // 创建卡片
+        card.innerHTML = `
+            <div class="website-icon">
+                ${iconHtml}
+            </div>
+            <div class="website-card-content">
+                <h3 class="website-name">
+                    <i class="fas fa-link website-name-icon"></i>
+                    ${escapeHtml(this.website.name)}
+                </h3>
+                <p class="website-url">${escapeHtml(this.website.url)}</p>
+                <p class="website-desc">
+                    <i class="fas fa-info-circle website-desc-icon"></i>
+                    ${this.website.desc ? escapeHtml(this.website.desc) : ''}
+                </p>
+                ${websiteDetail ? `<p class="website-detail">${escapeHtml(websiteDetail)}</p>` : ''}
+                ${tagsHtml ? `<div class="website-tags">${tagsHtml}</div>` : ''}
+            </div>
+        `;
+        
+        // 添加点击事件
+        card.addEventListener('click', () => {
+            this.onClick(this.website);
+        });
+        
+        // 确保右键事件冒泡，以便上下文菜单可以触发
+        card.addEventListener('contextmenu', (e) => {
+            // 不阻止默认行为，让上下文菜单正常触发
+            console.log('Right click on website card:', this.website.id);
+        });
+        
+        // 异步获取favicon并更新卡片
+        this.updateFavicon(card);
+        
+        return card;
+    }
+    
+    // 同步检查缓存中的图标
+    getCachedFaviconUrl() {
+        try {
+            let url = this.website.url;
+            
+            // 确保URL有协议头
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = `https://${url}`;
+            }
+            
+            // 移除URL中可能存在的空格和特殊字符
+            const cleanUrl = url.replace(/[`\s]/g, '');
+            
+            // 生成缓存键
+            const cacheKey = `favicon_${btoa(cleanUrl)}`;
+            
+            // 1. 首先检查内存缓存
+            if (faviconMemoryCache.has(cacheKey)) {
+                const cached = faviconMemoryCache.get(cacheKey);
+                const now = Date.now();
+                if (now < cached.expires) {
+                    return cached.url;
+                } else {
+                    // 内存缓存已过期，删除它
+                    faviconMemoryCache.delete(cacheKey);
+                }
+            }
+            
+            // 2. 检查localStorage缓存
+            const cachedFavicon = localStorage.getItem(cacheKey);
+            const cachedExpires = localStorage.getItem(`${cacheKey}_expires`);
+            
+            if (cachedFavicon && cachedExpires) {
+                const now = Date.now();
+                const expires = parseInt(cachedExpires);
+                if (now < expires) {
+                    // 同时更新到内存缓存
+                    faviconMemoryCache.set(cacheKey, { url: cachedFavicon, expires: now + FAVICON_CACHE_CONFIG.MEMORY_TTL });
+                    return cachedFavicon;
+                } else {
+                    // 缓存已过期，删除它
+                    localStorage.removeItem(cacheKey);
+                    localStorage.removeItem(`${cacheKey}_expires`);
+                }
+            }
+            
+            // 没有缓存，返回null
+            return null;
+        } catch (error) {
+            console.error('获取缓存favicon失败:', this.website.url, error.message);
+            return null;
+        }
+    }
+    
+    getDefaultIconHtml() {
+        if (this.defaultIconType === 'text') {
+            // 使用网站名称的首字母作为图标
+            const firstChar = this.website.name && this.website.name.length > 0 
+                ? this.website.name.charAt(0).toUpperCase() 
+                : 'W';
+            return `<div class="text-icon">${firstChar}</div>`;
+        } else {
+            // 默认使用小地球图标
+            return '<i class="fas fa-globe"></i>';
+        }
+    }
+    
+    async updateFavicon(card) {
+        try {
+            const websiteIcon = card.querySelector('.website-icon');
+            if (websiteIcon) {
+                // 使用getFaviconHtml方法，先返回默认图标，然后异步更新，不会阻塞界面渲染
+                const iconHtml = await iconManager.getFaviconHtml(this.website.url, this.website.name, {
+                    defaultIconType: this.defaultIconType
+                });
+                websiteIcon.innerHTML = iconHtml;
+            }
+        } catch (error) {
+            console.error('更新favicon失败:', error);
+            // 如果获取图标失败，使用默认图标
+            const websiteIcon = card.querySelector('.website-icon');
+            if (websiteIcon) {
+                websiteIcon.innerHTML = this.getDefaultIconHtml();
+            }
+        }
+    }
+
+    getElement() {
+        return this.element;
+    }
+}
+
+// 主应用组件
+class PopupApp {
+    constructor() {
+        // 初始化组件
+        this.toast = new Toast();
+        this.contextMenu = new ContextMenu((action, target, targetType) => {
+            this.handleAction(action, target, targetType);
+        });
+        
+        // 全局状态
+        this.currentData = null;
+        this.currentMainCategory = null;
+        this.currentCategory = null;
+        this.currentSubCategory = null;
+        
+        // 用户状态保存键名
+        this.userStateKey = 'cloudhut_user_state';
+        
+        // DOM元素
+        this.mainCategorySelect = document.getElementById('mainCategorySelect');
+        this.categoryNav = document.getElementById('categoryNav');
+        this.subcategoryTabs = document.getElementById('subcategoryTabs');
+        this.websiteList = document.getElementById('websiteList');
+        this.settingsBtn = document.getElementById('settingsBtn');
+        this.searchInput = document.getElementById('searchInput');
+        this.searchBtn = document.getElementById('searchBtn');
+        this.searchSuggestions = document.getElementById('searchSuggestions');
+        this.searchContainer = document.querySelector('.search-container');
+        this.addWebsiteBtn = document.getElementById('addWebsiteBtn');
+        this.addCategoryBtn = document.getElementById('addCategoryBtn');
+        this.addSubcategoryBtn = document.getElementById('addSubcategoryBtn');
+        
+        // 初始化应用
+        this.init();
+    }
+    
+    /**
+     * 保存用户浏览状态
+     */
+    saveUserState() {
+        try {
+            const userState = {
+                mainCategoryId: this.currentMainCategory?.id || '',
+                categoryId: this.currentCategory?.id || '',
+                subCategoryId: this.currentSubCategory?.id || '',
+                timestamp: Date.now()
+            };
+            
+            localStorage.setItem(this.userStateKey, JSON.stringify(userState));
+            console.log('用户状态已保存:', userState);
+        } catch (error) {
+            console.error('保存用户状态失败:', error);
+        }
+    }
+    
+    /**
+     * 恢复用户浏览状态
+     */
+    restoreUserState() {
+        try {
+            const userStateStr = localStorage.getItem(this.userStateKey);
+            if (!userStateStr) {
+                console.log('没有找到用户状态，使用默认值');
+                return false;
+            }
+            
+            const userState = JSON.parse(userStateStr);
+            console.log('找到用户状态:', userState);
+            
+            // 检查数据是否有效且时间不超过30天
+            const now = Date.now();
+            const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+            if (userState.timestamp && now - userState.timestamp > thirtyDays) {
+                console.log('用户状态已过期，使用默认值');
+                return false;
+            }
+            
+            // 恢复主类导航
+            if (userState.mainCategoryId && this.currentData.mainCategories) {
+                const mainCategory = this.currentData.mainCategories.find(mc => mc.id === userState.mainCategoryId);
+                if (mainCategory) {
+                    this.selectMainCategory(mainCategory);
+                    this.mainCategorySelect.value = mainCategory.id;
+                    
+                    // 恢复一级分类
+                    if (userState.categoryId && mainCategory.categories) {
+                        const category = mainCategory.categories.find(cat => cat.id === userState.categoryId);
+                        if (category) {
+                            this.selectCategory(category);
+                            
+                            // 恢复二级分类
+                            if (userState.subCategoryId && category.subCategories) {
+                                const subCategory = category.subCategories.find(sc => sc.id === userState.subCategoryId);
+                                if (subCategory) {
+                                    this.selectSubcategory(subCategory);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            console.log('无法完全恢复用户状态，使用默认值');
+            return false;
+        } catch (error) {
+            console.error('恢复用户状态失败:', error);
+            return false;
+        }
+    }
+    
+    async init() {
+        // 加载数据 - 每次打开扩展都加载最新数据
+        await this.loadData();
+        
+        // 添加默认图标样式
+        addDefaultIconStyles();
+        
+        // 渲染主类导航
+        this.renderMainNav();
+        
+        // 设置事件监听
+        this.bindEvents();
+        
+        // 渲染侧边栏内容
+        this.renderSidebar();
+    }
+    
+    // 渲染侧边栏内容
+    renderSidebar() {
+        // 获取侧边栏元素
+        const sidebarMainCategories = document.getElementById('sidebarMainCategories');
+        const sidebarCategoriesSection = document.getElementById('sidebarCategoriesSection');
+        const sidebarCategories = document.getElementById('sidebarCategories');
+        const sidebarSubcategoriesSection = document.getElementById('sidebarSubcategoriesSection');
+        const sidebarSubcategories = document.getElementById('sidebarSubcategories');
+        
+        if (!sidebarMainCategories || !sidebarCategories || !sidebarSubcategories) {
+            return;
+        }
+        
+        // 渲染主类导航
+        this.renderMainCategoriesNav(sidebarMainCategories);
+        
+        // 渲染一级分类导航
+        if (this.currentMainCategory) {
+            this.renderCategoriesNav(sidebarCategoriesSection, sidebarCategories, this.currentMainCategory.categories);
+        }
+        
+        // 渲染二级分类导航
+        if (this.currentCategory) {
+            this.renderSubcategoriesNav(sidebarSubcategoriesSection, sidebarSubcategories, this.currentCategory.subCategories);
+        }
+    }
+    
+    // 渲染主类导航
+    renderMainCategoriesNav(container) {
+        if (!this.currentData || !this.currentData.mainCategories) {
+            container.innerHTML = '<li class="sidebar-nav-item"><a href="#">暂无数据</a></li>';
+            return;
+        }
+        
+        // 生成主类导航HTML
+        const html = this.currentData.mainCategories.map(mainCat => {
+            const isActive = this.currentMainCategory && this.currentMainCategory.id === mainCat.id;
+            return `
+                <li class="sidebar-nav-item ${isActive ? 'active' : ''}">
+                    <a href="#" data-main-category-id="${mainCat.id}">
+                        <i class="fas fa-folder"></i>
+                        ${escapeHtml(mainCat.name)}
+                    </a>
+                </li>
+            `;
+        }).join('');
+        
+        container.innerHTML = html;
+        
+        // 添加点击事件
+        container.querySelectorAll('a[data-main-category-id]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const mainCategoryId = e.target.closest('a').dataset.mainCategoryId;
+                const mainCategory = this.currentData.mainCategories.find(mc => mc.id === mainCategoryId);
+                if (mainCategory) {
+                    this.selectMainCategory(mainCategory);
+                }
+            });
+        });
+    }
+    
+    // 渲染一级分类导航
+    renderCategoriesNav(sectionContainer, listContainer, categories) {
+        if (!categories || categories.length === 0) {
+            sectionContainer.style.display = 'none';
+            return;
+        }
+        
+        sectionContainer.style.display = 'block';
+        
+        // 生成一级分类导航HTML
+        const html = categories.map(category => {
+            const isActive = this.currentCategory && this.currentCategory.id === category.id;
+            return `
+                <li class="sidebar-nav-item ${isActive ? 'active' : ''}">
+                    <a href="#" data-category-id="${category.id}">
+                        <i class="fas fa-list"></i>
+                        ${escapeHtml(category.name)}
+                    </a>
+                </li>
+            `;
+        }).join('');
+        
+        listContainer.innerHTML = html;
+        
+        // 添加点击事件
+        listContainer.querySelectorAll('a[data-category-id]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const categoryId = e.target.closest('a').dataset.categoryId;
+                const category = this.currentMainCategory.categories.find(cat => cat.id === categoryId);
+                if (category) {
+                    this.selectCategory(category);
+                }
+            });
+        });
+    }
+    
+    // 渲染二级分类导航
+    renderSubcategoriesNav(sectionContainer, listContainer, subcategories) {
+        if (!subcategories || subcategories.length === 0) {
+            sectionContainer.style.display = 'none';
+            return;
+        }
+        
+        sectionContainer.style.display = 'block';
+        
+        // 生成二级分类导航HTML
+        const html = subcategories.map(subcategory => {
+            const isActive = this.currentSubCategory && this.currentSubCategory.id === subcategory.id;
+            return `
+                <li class="sidebar-nav-item ${isActive ? 'active' : ''}">
+                    <a href="#" data-subcategory-id="${subcategory.id}">
+                        <i class="fas fa-tag"></i>
+                        ${escapeHtml(subcategory.name)}
+                    </a>
+                </li>
+            `;
+        }).join('');
+        
+        listContainer.innerHTML = html;
+        
+        // 添加点击事件
+        listContainer.querySelectorAll('a[data-subcategory-id]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const subcategoryId = e.target.closest('a').dataset.subcategoryId;
+                const subcategory = this.currentCategory.subCategories.find(sc => sc.id === subcategoryId);
+                if (subcategory) {
+                    this.selectSubcategory(subcategory);
+                }
+            });
+        });
+    }
+    
+    async loadData() {
+        try {
+            const newData = await DataManager.getAllData();
+            this.currentData = newData;
+            
+            // 更新图标管理器配置
+            iconManager.updateConfig({
+                faviconApi: newData.config?.faviconApi || 'https://icon.bqb.cool?url=',
+                faviconApiBackup: newData.config?.faviconApiBackup || 'https://icon.bqb.cool?url=',
+                apiTimeout: newData.config?.apiTimeout || 5000,
+                defaultIconType: newData.config?.defaultIconType || 'globe',
+                useFaviconIco: newData.config?.useFaviconIco !== false,
+                useRegex: newData.config?.useRegex !== false
+            });
+            
+            // 确保当前选择的分类指向新数据对象
+            // 设置当前主类（无论是否已有值）
+            if (newData.mainCategories.length > 0) {
+                // 如果当前主类存在，尝试更新它；否则设置为第一个主类
+                this.currentMainCategory = newData.mainCategories.find(
+                    mc => mc.id === this.currentMainCategory?.id
+                ) || newData.mainCategories[0];
+            } else {
+                this.currentMainCategory = null;
+            }
+            
+            // 设置当前一级分类（无论是否已有值）
+            if (this.currentMainCategory && this.currentMainCategory.categories.length > 0) {
+                // 如果当前一级分类存在，尝试更新它；否则设置为第一个一级分类
+                this.currentCategory = this.currentMainCategory.categories.find(
+                    cat => cat.id === this.currentCategory?.id
+                ) || this.currentMainCategory.categories[0];
+            } else {
+                this.currentCategory = null;
+            }
+            
+            // 设置当前二级分类（无论是否已有值）
+            if (this.currentCategory && this.currentCategory.subCategories.length > 0) {
+                // 如果当前二级分类存在，尝试更新它；否则设置为第一个二级分类
+                this.currentSubCategory = this.currentCategory.subCategories.find(
+                    subCat => subCat.id === this.currentSubCategory?.id
+                ) || this.currentCategory.subCategories[0];
+            } else {
+                this.currentSubCategory = null;
+            }
+        } catch (error) {
+            console.error('加载数据失败:', error);
+            this.toast.show('加载数据失败', 'error');
+        }
+    }
+    
+    bindEvents() {
+        // 主类选择框变化事件
+        this.mainCategorySelect.addEventListener('change', (e) => this.handleMainCategoryChange(e));
+        
+        // 设置按钮点击事件
+        this.settingsBtn.addEventListener('click', () => {
+            BrowserAPI.runtimeOpenOptionsPage();
+        });
+        
+        // 新增网址按钮点击事件
+        this.addWebsiteBtn.addEventListener('click', () => this.handleAddWebsite());
+        
+        // 添加一级分类按钮点击事件
+        this.addCategoryBtn.addEventListener('click', () => this.handleAddCategory());
+        
+        // 添加二级分类按钮点击事件
+        this.addSubcategoryBtn.addEventListener('click', () => this.handleAddSubcategory());
+        
+        // 搜索功能事件绑定
+        this.searchInput.addEventListener('input', (e) => {
+            this.handleSearch(e.target.value);
+        });
+        
+        this.searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.performSearch(e.target.value);
+            } else if (e.key === 'Escape') {
+                this.clearSearch();
+            }
+        });
+        
+        // 点击搜索建议
+        this.searchSuggestions.addEventListener('click', (e) => {
+            const suggestionItem = e.target.closest('.search-suggestion-item');
+            if (suggestionItem) {
+                const websiteId = suggestionItem.dataset.websiteId;
+                if (websiteId) {
+                    this.visitWebsite(websiteId);
+                }
+                this.clearSearch();
+            }
+        });
+        
+        // 添加鼠标滚轮水平滚动支持
+        this.addHorizontalScrollSupport();
+        
+        // 添加拖拽功能支持
+        this.addDragAndDropSupport();
+    }
+    
+    // 添加鼠标滚轮水平滚动支持
+    addHorizontalScrollSupport() {
+        // 获取所有导航列表
+        const navLists = document.querySelectorAll('.nav-list');
+        
+        navLists.forEach(navList => {
+            navList.addEventListener('wheel', (e) => {
+                // 阻止默认垂直滚动
+                e.preventDefault();
+                
+                // 实现水平滚动
+                navList.scrollLeft += e.deltaY;
+            });
+        });
+    }
+    
+    // 添加拖拽功能支持
+    addDragAndDropSupport() {
+        let draggedItem = null;
+        let startX, startY;
+        let isDragging = false;
+        let currentNavList = null;
+        const self = this; // 保存当前实例的引用
+        
+        // 获取所有导航列表
+        const navLists = document.querySelectorAll('.nav-list');
+        
+        navLists.forEach(navList => {
+            // 为每个导航项添加拖拽支持
+            navList.querySelectorAll('.nav-item.nav-item-primary, .nav-item.nav-item-secondary').forEach(item => {
+                // 鼠标按下事件 - 开始拖拽
+                item.addEventListener('mousedown', (e) => {
+                    // 只允许左键拖拽
+                    if (e.button !== 0) return;
+                    
+                    // 记录初始位置和当前导航列表
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    currentNavList = navList;
+                    draggedItem = e.target.closest('.nav-item');
+                    
+                    // 添加拖拽样式
+                    draggedItem.classList.add('dragging');
+                    
+                    // 阻止文本选择
+                    document.body.style.userSelect = 'none';
+                    
+                    // 添加全局拖拽事件监听器
+                    document.addEventListener('mousemove', drag);
+                    document.addEventListener('mouseup', endDrag);
+                    
+                    // 阻止默认行为，防止文本选择
+                    e.preventDefault();
+                });
+            });
+            
+            // 拖拽移动
+            function drag(e) {
+                if (!draggedItem) return;
+                
+                // 检查是否开始拖拽（移动超过阈值）
+                if (!isDragging) {
+                    if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
+                        isDragging = true;
+                    }
+                }
+                
+                if (isDragging) {
+                    // 更新拖拽项位置
+                    const rect = draggedItem.getBoundingClientRect();
+                    const x = e.clientX - rect.width / 2;
+                    const y = e.clientY - rect.height / 2;
+                    draggedItem.style.position = 'fixed';
+                    draggedItem.style.left = `${x}px`;
+                    draggedItem.style.top = `${y}px`;
+                    draggedItem.style.zIndex = '1000';
+                    draggedItem.style.pointerEvents = 'none';
+                    
+                    // 查找放置目标
+                    const siblings = Array.from(currentNavList.querySelectorAll('.nav-item:not(.dragging)'));
+                    siblings.forEach(sibling => {
+                        sibling.classList.remove('drag-over');
+                        sibling.classList.remove('drag-over-right');
+                    });
+                    
+                    // 找到当前鼠标位置最接近的元素，并确定是放在左边还是右边
+                    let targetItem = null;
+                    let isRightSide = false;
+                    let closestDistance = Infinity;
+                    
+                    siblings.forEach(sibling => {
+                        const siblingRect = sibling.getBoundingClientRect();
+                        const elementCenterX = siblingRect.left + siblingRect.width / 2;
+                        const distance = Math.abs(e.clientX - elementCenterX);
+                        
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            targetItem = sibling;
+                            // 如果鼠标在元素中心右侧，标记为放在右边
+                            isRightSide = e.clientX > elementCenterX;
+                        }
+                    });
+                    
+                    if (targetItem) {
+                        if (isRightSide) {
+                            targetItem.classList.add('drag-over-right');
+                        } else {
+                            targetItem.classList.add('drag-over');
+                        }
+                    }
+                }
+            }
+            
+            // 拖拽结束
+            function endDrag(e) {
+                if (!draggedItem) return;
+                
+                // 重置样式
+                draggedItem.style.position = '';
+                draggedItem.style.left = '';
+                draggedItem.style.top = '';
+                draggedItem.style.zIndex = '';
+                draggedItem.style.pointerEvents = '';
+                draggedItem.classList.remove('dragging');
+                
+                // 查找放置位置
+                let dropTarget = document.querySelector('.drag-over');
+                let isRightSide = false;
+                
+                // 如果没有左侧放置目标，检查右侧放置目标
+                if (!dropTarget) {
+                    dropTarget = document.querySelector('.drag-over-right');
+                    isRightSide = true;
+                }
+                
+                // 移除所有拖拽样式
+                document.querySelectorAll('.drag-over, .drag-over-right').forEach(item => {
+                    item.classList.remove('drag-over');
+                    item.classList.remove('drag-over-right');
+                });
+                
+                // 恢复文本选择
+                document.body.style.userSelect = '';
+                
+                // 如果找到放置目标，执行拖拽排序
+                if (dropTarget && isDragging) {
+                    // 执行拖拽排序
+                    handleDragSort(draggedItem, dropTarget, isRightSide);
+                }
+                
+                // 重置状态
+                isDragging = false;
+                draggedItem = null;
+                currentNavList = null;
+                
+                // 移除全局事件监听器
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', endDrag);
+            }
+        });
+        
+        // 处理拖拽排序
+        async function handleDragSort(draggedItem, dropTarget, isRightSide = false) {
+            const isPrimary = draggedItem.classList.contains('nav-item-primary');
+            const isSecondary = draggedItem.classList.contains('nav-item-secondary');
+            
+            if (isPrimary || isSecondary) {
+                // 获取分类ID和类型
+                const draggedId = draggedItem.dataset.categoryId || draggedItem.dataset.subcategoryId;
+                const dropId = dropTarget.dataset.categoryId || dropTarget.dataset.subcategoryId;
+                const type = isPrimary ? 'category' : 'subcategory';
+                
+                // 获取当前主分类和一级分类信息
+                const currentMainCatId = self.currentMainCategory.id;
+                const currentCategoryId = self.currentCategory ? self.currentCategory.id : null;
+                
+                // 调试信息
+                console.log(`拖拽排序: ${type} ${draggedId} -> ${dropId} ${isRightSide ? 'right' : 'left'}`);
+                console.log(`当前主分类: ${currentMainCatId}, 当前一级分类: ${currentCategoryId}`);
+                
+                // 保存原始顺序，用于撤销操作
+                const originalOrder = {
+                    mainCategoryId: currentMainCatId,
+                    categoryId: currentCategoryId,
+                    type: type,
+                    order: type === 'category' 
+                        ? self.currentMainCategory.categories.map(cat => cat.id)
+                        : self.currentCategory.subCategories.map(subCat => subCat.id)
+                };
+                
+                // 查找元素索引
+                let draggedIndex = -1;
+                let dropIndex = -1;
+                
+                if (type === 'category') {
+                    // 一级分类排序
+                    draggedIndex = self.currentMainCategory.categories.findIndex(cat => cat.id === draggedId);
+                    dropIndex = self.currentMainCategory.categories.findIndex(cat => cat.id === dropId);
+                    
+                    if (draggedIndex !== -1 && dropIndex !== -1) {
+                        // 调整位置
+                        const draggedItemData = self.currentMainCategory.categories.splice(draggedIndex, 1)[0];
+                        if (isRightSide) {
+                            self.currentMainCategory.categories.splice(dropIndex + 1, 0, draggedItemData);
+                        } else {
+                            self.currentMainCategory.categories.splice(dropIndex, 0, draggedItemData);
+                        }
+                        
+                        // 重新渲染导航
+                        self.renderCategoryNav();
+                        
+                        // 更新主类选择器
+                        self.renderMainNav();
+                        
+                        // 保存数据
+                        await self.saveData();
+                        
+                        // 显示提示
+                        self.toast.show('一级分类排序已更新', 'success', {
+                            undoable: true,
+                            onUndo: () => {
+                                // 撤销排序操作
+                                self.restoreOriginalOrder(originalOrder);
+                            }
+                        });
+                    }
+                } else {
+                    // 二级分类排序
+                    draggedIndex = self.currentCategory.subCategories.findIndex(subCat => subCat.id === draggedId);
+                    dropIndex = self.currentCategory.subCategories.findIndex(subCat => subCat.id === dropId);
+                    
+                    if (draggedIndex !== -1 && dropIndex !== -1) {
+                        // 调整位置
+                        const draggedItemData = self.currentCategory.subCategories.splice(draggedIndex, 1)[0];
+                        if (isRightSide) {
+                            self.currentCategory.subCategories.splice(dropIndex + 1, 0, draggedItemData);
+                        } else {
+                            self.currentCategory.subCategories.splice(dropIndex, 0, draggedItemData);
+                        }
+                        
+                        // 重新渲染导航
+                        self.renderSubcategoryTabs();
+                        
+                        // 保存数据
+                        await self.saveData();
+                        
+                        // 显示提示
+                        self.toast.show('二级分类排序已更新', 'success', {
+                            undoable: true,
+                            onUndo: () => {
+                                // 撤销排序操作
+                                self.restoreOriginalOrder(originalOrder);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    }
+    
+    // 撤销排序操作，恢复原始顺序
+    async restoreOriginalOrder(originalOrder) {
+        console.log('恢复原始顺序:', originalOrder);
+        
+        // 根据原始顺序恢复分类
+        if (originalOrder.type === 'category') {
+            // 恢复一级分类顺序
+            const mainCategory = this.currentData.mainCategories.find(mc => mc.id === originalOrder.mainCategoryId);
+            if (mainCategory) {
+                // 根据原始ID顺序重新排序
+                mainCategory.categories.sort((a, b) => {
+                    const aIndex = originalOrder.order.indexOf(a.id);
+                    const bIndex = originalOrder.order.indexOf(b.id);
+                    return aIndex - bIndex;
+                });
+                
+                // 重新渲染导航
+                this.renderCategoryNav();
+                
+                // 更新主类选择器
+                this.renderMainNav();
+            }
+        } else {
+            // 恢复二级分类顺序
+            const mainCategory = this.currentData.mainCategories.find(mc => mc.id === originalOrder.mainCategoryId);
+            if (mainCategory) {
+                const category = mainCategory.categories.find(cat => cat.id === originalOrder.categoryId);
+                if (category) {
+                    // 根据原始ID顺序重新排序
+                    category.subCategories.sort((a, b) => {
+                        const aIndex = originalOrder.order.indexOf(a.id);
+                        const bIndex = originalOrder.order.indexOf(b.id);
+                        return aIndex - bIndex;
+                    });
+                    
+                    // 重新渲染导航
+                    this.renderSubcategoryTabs();
+                }
+            }
+        }
+        
+        // 保存数据
+        await this.saveData();
+        
+        // 显示提示
+        this.toast.show('分类排序已恢复', 'success');
+    }
+    
+    // 处理主类选择变化
+    handleMainCategoryChange(e) {
+        const mainCategoryId = e.target.value;
+        
+        // 如果选择的是新增选项
+        if (mainCategoryId === 'add') {
+            // 重新渲染主类导航，恢复之前的选择
+            this.renderMainNav();
+            // 显示添加主类导航对话框
+            this.showAddMainCategoryDialog();
+            return;
+        }
+        
+        const mainCategory = this.currentData.mainCategories.find(cat => cat.id === mainCategoryId);
+        if (mainCategory) {
+            this.selectMainCategory(mainCategory);
+        }
+    }
+    
+    // 渲染主类导航
+    renderMainNav() {
+        // 清空主类选择器
+        this.mainCategorySelect.innerHTML = '';
+        
+        // 添加默认选项
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '选择主类导航';
+        this.mainCategorySelect.appendChild(defaultOption);
+        
+        // 添加新增选项
+        const addOption = document.createElement('option');
+        addOption.value = 'add';
+        addOption.textContent = '+ 新增主类导航';
+        this.mainCategorySelect.appendChild(addOption);
+        
+        // 添加现有主类导航
+        this.currentData.mainCategories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.id;
+            option.textContent = category.name;
+            this.mainCategorySelect.appendChild(option);
+        });
+        
+        // 设置当前选中的主类导航
+        if (this.currentMainCategory) {
+            this.mainCategorySelect.value = this.currentMainCategory.id;
+        }
+    }
+    
+    // 选择主类导航
+    selectMainCategory(mainCategory) {
+        // 更新状态
+        this.currentMainCategory = mainCategory;
+        
+        // 渲染一级导航
+        this.renderCategoryNav();
+        
+        // 重新渲染侧边栏
+        this.renderSidebar();
+        
+        // 保存用户状态
+        this.saveUserState();
+    }
+    
+    // 渲染一级导航
+    renderCategoryNav() {
+        if (!this.currentMainCategory || !this.currentMainCategory.categories) return;
+        
+        // 获取一级分类列表元素
+        const ulElement = this.categoryNav.querySelector('.nav-list-primary');
+        if (!ulElement) return;
+        
+        // 保存新增按钮元素
+        const addBtnElement = ulElement.querySelector('.nav-item.nav-item-add');
+        
+        // 更新一级分类列表（不包括新增按钮）
+        ulElement.innerHTML = this.currentMainCategory.categories.map(cat => `
+            <li class="nav-item nav-item-primary" data-category-id="${cat.id}">
+                ${cat.icon ? `<i class="${cat.icon}" style="margin-right: 8px;"></i>` : ''}${cat.name}
+            </li>
+        `).join('');
+        
+        // 重新添加新增按钮
+        ulElement.appendChild(addBtnElement);
+        
+        // 添加点击事件
+        ulElement.querySelectorAll('.nav-item-primary').forEach(item => {
+            item.addEventListener('click', () => {
+                const categoryId = item.dataset.categoryId;
+                const category = this.currentMainCategory.categories.find(cat => cat.id === categoryId);
+                if (category) {
+                    this.selectCategory(category);
+                }
+            });
+        });
+        
+        // 默认选择第一个一级分类
+        if (this.currentMainCategory.categories.length > 0) {
+            this.selectCategory(this.currentMainCategory.categories[0]);
+        }
+        
+        // 重新添加水平滚动支持
+        this.addHorizontalScrollSupport();
+        // 重新添加拖拽功能支持
+        this.addDragAndDropSupport();
+    }
+    
+    // 选择一级分类
+    selectCategory(category) {
+        // 更新状态
+        this.currentCategory = category;
+        
+        // 更新UI - 添加激活状态
+        this.categoryNav.querySelectorAll('.nav-item-primary').forEach(item => {
+            item.classList.remove('active');
+        });
+        const activeItem = this.categoryNav.querySelector(`[data-category-id="${category.id}"]`);
+        if (activeItem) {
+            activeItem.classList.add('active');
+        }
+        
+        // 渲染二级分类标签
+        this.renderSubcategoryTabs();
+        
+        // 重新渲染侧边栏
+        this.renderSidebar();
+        
+        // 保存用户状态
+        this.saveUserState();
+    }
+    
+    // 渲染二级分类标签
+    renderSubcategoryTabs() {
+        if (!this.currentCategory || !this.currentCategory.subCategories) return;
+        
+        // 获取二级分类列表元素
+        const ulElement = this.subcategoryTabs.querySelector('.nav-list-secondary');
+        if (!ulElement) return;
+        
+        // 保存新增按钮元素
+        const addBtnElement = ulElement.querySelector('.nav-item.nav-item-add');
+        
+        // 更新二级分类列表（不包括新增按钮）
+        ulElement.innerHTML = this.currentCategory.subCategories.map(subCat => `
+            <li class="nav-item nav-item-secondary" data-subcategory-id="${subCat.id}">
+                ${subCat.icon ? `<i class="${subCat.icon}" style="margin-right: 8px;"></i>` : ''}${subCat.name}
+            </li>
+        `).join('');
+        
+        // 重新添加新增按钮
+        ulElement.appendChild(addBtnElement);
+        
+        // 添加点击事件
+        ulElement.querySelectorAll('.nav-item-secondary').forEach(item => {
+            item.addEventListener('click', () => {
+                const subCategoryId = item.dataset.subcategoryId;
+                const subCategory = this.currentCategory.subCategories.find(subCat => subCat.id === subCategoryId);
+                if (subCategory) {
+                    this.selectSubcategory(subCategory);
+                }
+            });
+        });
+        
+        // 默认选择第一个二级分类
+        if (this.currentCategory.subCategories.length > 0) {
+            this.selectSubcategory(this.currentCategory.subCategories[0]);
+        }
+        
+        // 重新添加水平滚动支持
+        this.addHorizontalScrollSupport();
+        // 重新添加拖拽功能支持
+        this.addDragAndDropSupport();
+    }
+    
+    // 选择二级分类
+    selectSubcategory(subCategory) {
+        // 更新状态
+        this.currentSubCategory = subCategory;
+        
+        // 更新UI - 添加激活状态
+        this.subcategoryTabs.querySelectorAll('.nav-item-secondary').forEach(item => {
+            item.classList.remove('active');
+        });
+        const activeItem = this.subcategoryTabs.querySelector(`[data-subcategory-id="${subCategory.id}"]`);
+        if (activeItem) {
+            activeItem.classList.add('active');
+        }
+        
+        // 重新渲染侧边栏
+        this.renderSidebar();
+        
+        // 渲染网站列表
+        this.renderWebsiteList();
+        
+        // 保存用户状态
+        this.saveUserState();
+    }
+    
+    // 渲染网站列表
+    renderWebsiteList() {
+        if (!this.currentCategory || !this.currentSubCategory) return;
+        
+        // 获取网站列表元素
+        const ulElement = this.websiteList;
+        if (!ulElement) return;
+        
+        // 清空网站列表
+        ulElement.innerHTML = '';
+        
+        // 获取当前二级分类下的网站
+        const websites = this.currentSubCategory.websites || [];
+        
+        if (websites.length === 0) {
+            // 显示空状态
+            ulElement.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <div class="empty-state-text">当前分类下暂无网址</div>
+                </div>
+            `;
+            return;
+        }
+        
+        // 遍历网站列表，创建网站卡片
+        websites.forEach(website => {
+            const card = new WebsiteCard(website, (website) => {
+                this.visitWebsite

@@ -1,11 +1,77 @@
 /**
  * 数据管理模块
  * 提供完整的数据管理功能，支持跨浏览器兼容性
+ * 支持本地存储和数据库存储切换
  */
 
-// 使用webextension-polyfill提供跨浏览器兼容性支持
-// @ts-ignore - webextension-polyfill类型定义可能需要额外安装
-const browserAPI = window.browser || window.chrome || {};
+import { DatabaseManager } from './db.js';
+
+// 浏览器API兼容层 - 导出以便在其他模块中使用
+export class BrowserAPI {
+  static get storage() {
+    return window.browser?.storage || window.chrome?.storage || null;
+  }
+
+  static get runtime() {
+    return window.browser?.runtime || window.chrome?.runtime || null;
+  }
+
+  static get tabs() {
+    return window.browser?.tabs || window.chrome?.tabs || null;
+  }
+
+  static get downloads() {
+    return window.browser?.downloads || window.chrome?.downloads || null;
+  }
+  
+  // 统一Promise接口的tabs.query方法
+  static async tabsQuery(options) {
+    return new Promise((resolve) => {
+      if (this.tabs?.query) {
+        const result = this.tabs.query(options);
+        if (result && typeof result.then === 'function') {
+          result.then(resolve);
+        } else {
+          this.tabs.query(options, resolve);
+        }
+      } else {
+        resolve([]);
+      }
+    });
+  }
+  
+  // 统一Promise接口的tabs.create方法
+  static async tabsCreate(options) {
+    return new Promise((resolve) => {
+      if (this.tabs?.create) {
+        const result = this.tabs.create(options);
+        if (result && typeof result.then === 'function') {
+          result.then(resolve);
+        } else {
+          this.tabs.create(options, resolve);
+        }
+      } else {
+        resolve(null);
+      }
+    });
+  }
+  
+  // 统一Promise接口的runtime.openOptionsPage方法
+  static async runtimeOpenOptionsPage() {
+    return new Promise((resolve) => {
+      if (this.runtime?.openOptionsPage) {
+        const result = this.runtime.openOptionsPage();
+        if (result && typeof result.then === 'function') {
+          result.then(resolve);
+        } else {
+          this.runtime.openOptionsPage(resolve);
+        }
+      } else {
+        resolve();
+      }
+    });
+  }
+}
 
 /**
  * 默认数据结构
@@ -121,6 +187,26 @@ function generateId(prefix = 'id') {
  */
 export class DataValidator {
   /**
+   * 检查字符串中是否包含特殊字符
+   * @param {string} str - 要检查的字符串
+   * @param {string} fieldName - 字段名称
+   * @returns {Object} 检查结果
+   */
+  static checkSpecialCharacters(str, fieldName) {
+    // 定义禁止使用的特殊字符正则表达式（去掉了|和?）
+    const specialCharRegex = /[<>'"/\\\*:;]/g;
+    
+    if (specialCharRegex.test(str)) {
+      return { 
+        valid: false, 
+        message: `${fieldName} 不能包含 <>'"'/\\*:; 等特殊字符` 
+      };
+    }
+    
+    return { valid: true };
+  }
+
+  /**
    * 验证数据结构
    * @param {Object} data - 要验证的数据
    * @returns {Object} 验证结果
@@ -159,6 +245,12 @@ export class DataValidator {
       return { valid: false, message: `主类导航 "${mainCat.name || '未知'}" 格式无效` };
     }
 
+    // 验证主类名称
+    const nameCheck = this.checkSpecialCharacters(mainCat.name, '主类名称');
+    if (!nameCheck.valid) {
+      return nameCheck;
+    }
+
     // 验证一级分类
     for (const cat of mainCat.categories) {
       const catValidation = this.validateCategory(cat);
@@ -182,6 +274,12 @@ export class DataValidator {
 
     if (!cat.id || !cat.name || !Array.isArray(cat.subCategories)) {
       return { valid: false, message: `一级分类 "${cat.name || '未知'}" 格式无效` };
+    }
+
+    // 验证一级分类名称
+    const nameCheck = this.checkSpecialCharacters(cat.name, '一级分类名称');
+    if (!nameCheck.valid) {
+      return nameCheck;
     }
 
     // 验证二级分类
@@ -209,6 +307,12 @@ export class DataValidator {
       return { valid: false, message: `二级分类 "${subCat.name || '未知'}" 格式无效` };
     }
 
+    // 验证二级分类名称
+    const nameCheck = this.checkSpecialCharacters(subCat.name, '二级分类名称');
+    if (!nameCheck.valid) {
+      return nameCheck;
+    }
+
     // 验证网站数据
     for (const website of subCat.websites) {
       const websiteValidation = this.validateWebsite(website);
@@ -234,11 +338,37 @@ export class DataValidator {
       return { valid: false, message: `网站 "${website.name || '未知'}" 缺少必要字段` };
     }
 
+    // 验证网站名称
+    const nameCheck = this.checkSpecialCharacters(website.name, '网站名称');
+    if (!nameCheck.valid) {
+      return nameCheck;
+    }
+
     // 验证URL格式
     try {
       new URL(website.url);
     } catch {
       return { valid: false, message: `网站 "${website.name}" URL格式无效` };
+    }
+
+    // 验证网站描述（如果存在）
+    if (website.desc && typeof website.desc === 'string') {
+      const descCheck = this.checkSpecialCharacters(website.desc, '网站描述');
+      if (!descCheck.valid) {
+        return descCheck;
+      }
+    }
+
+    // 验证网站标签（如果存在）
+    if (website.tags && Array.isArray(website.tags)) {
+      for (const tag of website.tags) {
+        if (typeof tag === 'string') {
+          const tagCheck = this.checkSpecialCharacters(tag, '网站标签');
+          if (!tagCheck.valid) {
+            return tagCheck;
+          }
+        }
+      }
     }
 
     return { valid: true };
@@ -249,43 +379,337 @@ export class DataValidator {
  * 数据操作工具类
  */
 export class DataManager {
+  // 内部缓存配置
+  static CACHE_CONFIG = {
+    EXPIRY: 10 * 60 * 1000, // 缓存过期时间（10分钟，延长缓存时间减少存储访问）
+    KEY: 'navData' // 主存储键名
+  };
+  
+  // 存储配置
+  static STORAGE_CONFIG = {
+    USE_COMPRESSION: true, // 启用数据压缩
+    VERSION_KEY: 'navDataVersion', // 数据版本键名
+    HASH_KEY: 'navDataHash', // 数据哈希键名
+    LAST_UPDATE_KEY: 'navDataLastUpdate', // 最后更新时间键名
+    STORAGE_TYPE_KEY: 'storageType', // 存储类型键名
+    DEFAULT_STORAGE_TYPE: 'local' // 默认存储类型: 'local' 或 'database'
+  };
+  
+  // 内部缓存，减少不必要的存储读取
+  static _cache = {
+    data: null,          // 缓存的数据
+    lastUpdated: 0,      // 最后更新时间
+    hash: null           // 数据哈希值，用于检测数据变化
+  };
+  
+  /**
+   * 数据压缩
+   * @param {string} data - 要压缩的数据
+   * @returns {string} 压缩后的数据
+   */
+  static compressData(data) {
+    try {
+      // 使用LZString压缩算法（如果可用）
+      if (typeof LZString !== 'undefined' && LZString.compress) {
+        return LZString.compress(data);
+      }
+      // 否则返回原始数据
+      return data;
+    } catch (error) {
+      console.error('数据压缩失败:', error);
+      return data;
+    }
+  }
+  
+  /**
+   * 数据解压缩
+   * @param {string} compressedData - 压缩的数据
+   * @returns {string} 解压缩后的数据
+   */
+  static decompressData(compressedData) {
+    try {
+      // 使用LZString解压缩算法（如果可用）
+      if (typeof LZString !== 'undefined' && LZString.decompress) {
+        return LZString.decompress(compressedData);
+      }
+      // 否则返回原始数据
+      return compressedData;
+    } catch (error) {
+      console.error('数据解压缩失败:', error);
+      return compressedData;
+    }
+  }
+  
+  /**
+   * 生成数据的简单哈希值，用于检测数据变化
+   * @param {Object} data - 要生成哈希值的数据
+   * @returns {string} 数据的哈希值
+   */
+  static _generateDataHash(data) {
+    try {
+      const jsonStr = JSON.stringify(data);
+      let hash = 0;
+      for (let i = 0; i < jsonStr.length; i++) {
+        const char = jsonStr.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // 转换为32位整数
+      }
+      return hash.toString();
+    } catch (error) {
+      console.error('生成数据哈希值失败:', error);
+      return Date.now().toString();
+    }
+  }
+  
+  /**
+   * 清除内部缓存
+   * @param {string} reason - 清除缓存的原因
+   */
+  static clearCache(reason = 'unknown') {
+    console.debug(`清除缓存: ${reason}`);
+    this._cache = {
+      data: null,
+      lastUpdated: 0,
+      hash: null
+    };
+  }
+  
+  /**
+   * 获取当前存储类型
+   * @returns {Promise<string>} 存储类型: 'local', 'indexeddb' 或 'mysql'
+   */
+  static async getStorageType() {
+    try {
+      let storageType = this.STORAGE_CONFIG.DEFAULT_STORAGE_TYPE;
+      
+      if (BrowserAPI.storage?.local?.get) {
+        const result = await BrowserAPI.storage.local.get([this.STORAGE_CONFIG.STORAGE_TYPE_KEY]);
+        if (result[this.STORAGE_CONFIG.STORAGE_TYPE_KEY]) {
+          storageType = result[this.STORAGE_CONFIG.STORAGE_TYPE_KEY];
+        }
+      }
+      
+      // 更新数据库管理器的存储类型
+      DatabaseManager.setStorageType(storageType);
+      return storageType;
+    } catch (error) {
+      console.error('获取存储类型失败:', error);
+      return this.STORAGE_CONFIG.DEFAULT_STORAGE_TYPE;
+    }
+  }
+
+  /**
+   * 设置存储类型
+   * @param {string} type - 存储类型: 'local', 'indexeddb' 或 'mysql'
+   * @returns {Promise<boolean>} 设置结果
+   */
+  static async setStorageType(type) {
+    try {
+      // 验证存储类型是否有效
+      const validTypes = ['local', 'indexeddb', 'mysql'];
+      const storageType = validTypes.includes(type) ? type : this.STORAGE_CONFIG.DEFAULT_STORAGE_TYPE;
+      
+      if (BrowserAPI.storage?.local?.set) {
+        await BrowserAPI.storage.local.set({
+          [this.STORAGE_CONFIG.STORAGE_TYPE_KEY]: storageType
+        });
+      }
+      
+      // 更新数据库管理器的存储类型
+      DatabaseManager.setStorageType(storageType);
+      // 清除缓存，确保下次获取最新数据
+      this.clearCache('存储类型已更改');
+      
+      return true;
+    } catch (error) {
+      console.error('设置存储类型失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 配置MySQL数据库连接
+   * @param {Object} config - MySQL连接配置
+   * @returns {Promise<boolean>} 配置结果
+   */
+  static async configureMySQL(config) {
+    try {
+      // 设置MySQL配置
+      DatabaseManager.setMySQLConfig(config);
+      
+      // 保存配置到本地存储
+      if (BrowserAPI.storage?.local?.set) {
+        await BrowserAPI.storage.local.set({
+          'mysqlConfig': config
+        });
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('配置MySQL数据库失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 获取MySQL数据库配置
+   * @returns {Promise<Object|null>} MySQL连接配置
+   */
+  static async getMySQLConfig() {
+    try {
+      if (BrowserAPI.storage?.local?.get) {
+        const result = await BrowserAPI.storage.local.get(['mysqlConfig']);
+        if (result.mysqlConfig) {
+          return result.mysqlConfig;
+        }
+      }
+      return DatabaseManager.getMySQLConfig();
+    } catch (error) {
+      console.error('获取MySQL配置失败:', error);
+      return null;
+    }
+  }
+
   /**
    * 获取所有数据
    * @returns {Promise<Object>} 所有数据
    */
   static async getAllData() {
     try {
-      // 使用兼容的存储API，处理Chrome的回调模式和Firefox的Promise模式
-      return new Promise((resolve) => {
-        // 如果浏览器支持Promise版本的storage API（Firefox）
-        if (browserAPI.storage?.local?.get && typeof browserAPI.storage.local.get === 'function') {
-          const result = browserAPI.storage.local.get(['navData']);
-          
-          // 检查是否是Promise
-          if (result && typeof result.then === 'function') {
-            // Promise模式
-            result.then(data => {
-              resolve(data.navData || defaultData);
-            }).catch(() => {
-              resolve(defaultData);
-            });
-          } else {
-            // 回调模式（Chrome）
-            browserAPI.storage.local.get(['navData'], (data) => {
-              if (browserAPI.runtime?.lastError) {
-                resolve(defaultData);
-              } else {
-                resolve(data.navData || defaultData);
-              }
-            });
-          }
-        } else {
-          // 如果storage API不可用，返回默认数据
-          resolve(defaultData);
-        }
-      });
+      // 检查缓存是否有效
+      const now = Date.now();
+      const isCacheValid = this._cache.data && 
+                         (now - this._cache.lastUpdated < this.CACHE_CONFIG.EXPIRY);
+      
+      if (isCacheValid) {
+        console.debug('使用缓存数据');
+        return this._cache.data;
+      }
+      
+      console.debug('缓存已过期或无效，从存储获取数据');
+      
+      // 获取当前存储类型
+      const storageType = await this.getStorageType();
+      
+      let navData;
+      if (storageType === 'mysql') {
+        // 从MySQL数据库获取数据
+        console.debug('从MySQL数据库获取数据');
+        navData = await this._getAllDataFromDatabase();
+      } else {
+        // 从本地存储获取数据
+        console.debug('从本地存储获取数据');
+        navData = await this._getAllDataFromLocalStorage();
+      }
+      
+      // 更新缓存
+      const newHash = this._generateDataHash(navData);
+      if (newHash !== this._cache.hash) {
+        console.debug('数据发生变化，更新缓存');
+        this._cache = {
+          data: navData,
+          lastUpdated: now,
+          hash: newHash
+        };
+      } else {
+        console.debug('数据未发生变化，仅更新缓存时间');
+        this._cache.lastUpdated = now;
+      }
+      
+      return navData;
     } catch (error) {
       console.error('获取数据失败:', error);
+      
+      // 如果缓存存在，返回缓存数据；否则返回默认数据
+      if (this._cache.data) {
+        console.debug('获取数据失败，返回缓存数据');
+        return this._cache.data;
+      }
+      
+      console.debug('获取数据失败，返回默认数据');
+      return defaultData;
+    }
+  }
+
+  /**
+   * 从本地存储获取所有数据
+   * @returns {Promise<Object>} 所有数据
+   */
+  static async _getAllDataFromLocalStorage() {
+    try {
+      // 统一处理Promise和回调模式
+      let dataResult;
+      if (BrowserAPI.storage?.local?.get) {
+        // 获取所有相关存储项
+        const keys = [this.CACHE_CONFIG.KEY, this.STORAGE_CONFIG.HASH_KEY];
+        const result = BrowserAPI.storage.local.get(keys);
+        
+        // 检查是否是Promise
+        if (result && typeof result.then === 'function') {
+          dataResult = await result;
+        } else {
+          // 回调模式
+          dataResult = await new Promise((resolve) => {
+            BrowserAPI.storage.local.get(keys, (data) => {
+              resolve(data);
+            });
+          });
+        }
+      }
+      
+      let rawData = dataResult?.[this.CACHE_CONFIG.KEY];
+      
+      let navData;
+      if (!rawData) {
+        console.debug('本地存储中无数据，使用默认数据');
+        navData = defaultData;
+      } else {
+        try {
+          // 检查数据是否需要解压缩（字符串形式的压缩数据或直接的对象）
+          if (typeof rawData === 'string') {
+            // 解压缩数据（如果启用）
+            const decompressedData = this.STORAGE_CONFIG.USE_COMPRESSION ? this.decompressData(rawData) : rawData;
+            navData = JSON.parse(decompressedData);
+            console.debug('成功解析压缩数据');
+          } else {
+            // 直接使用对象数据（兼容旧版本）
+            navData = rawData;
+            console.debug('使用直接对象数据（兼容旧版本）');
+          }
+        } catch (parseError) {
+          console.error('解析本地存储数据失败，使用默认数据:', parseError);
+          navData = defaultData;
+        }
+      }
+      
+      return navData;
+    } catch (error) {
+      console.error('从本地存储获取数据失败:', error);
+      return defaultData;
+    }
+  }
+
+  /**
+   * 从数据库获取所有数据
+   * @returns {Promise<Object>} 所有数据
+   */
+  static async _getAllDataFromDatabase() {
+    try {
+      // 目前数据库只存储网站数据，所以需要从数据库获取网站数据并构建完整数据结构
+      // 这里需要根据实际需求调整，可能需要更复杂的数据结构映射
+      const websites = await DatabaseManager.getWebsites();
+      
+      // 如果数据库中没有数据，返回默认数据
+      if (!websites || websites.length === 0) {
+        console.debug('数据库中无数据，使用默认数据');
+        return defaultData;
+      }
+      
+      // 这里需要根据实际需求，将数据库中的网站数据映射到完整的数据结构
+      // 暂时返回默认数据结构，后续可以扩展为从数据库构建完整结构
+      return defaultData;
+    } catch (error) {
+      console.error('从数据库获取数据失败:', error);
       return defaultData;
     }
   }
@@ -293,52 +717,190 @@ export class DataManager {
   /**
    * 保存所有数据
    * @param {Object} data - 要保存的数据
-   * @returns {Promise<boolean>} 保存结果
+   * @returns {Promise<Object>} 保存结果，包含success和message字段
    */
   static async saveAllData(data) {
     try {
+      console.debug('开始保存数据');
+      
       // 验证数据结构
       const validation = DataValidator.validateDataStructure(data);
       if (!validation.valid) {
         console.error('数据验证失败:', validation.message);
-        return false;
+        return { 
+          success: false, 
+          message: `数据验证失败: ${validation.message}` 
+        };
       }
 
-      // 使用兼容的存储API，处理Chrome的回调模式和Firefox的Promise模式
-      return new Promise((resolve) => {
-        // 如果浏览器支持Promise版本的storage API（Firefox）
-        if (browserAPI.storage?.local?.set && typeof browserAPI.storage.local.set === 'function') {
-          const result = browserAPI.storage.local.set({ navData: data });
-          
-          // 检查是否是Promise
-          if (result && typeof result.then === 'function') {
-            // Promise模式
-            result.then(() => {
-              resolve(true);
-            }).catch(() => {
-              console.error('保存数据失败（Promise模式）');
-              resolve(false);
-            });
-          } else {
-            // 回调模式（Chrome）
-            browserAPI.storage.local.set({ navData: data }, () => {
-              if (browserAPI.runtime?.lastError) {
-                console.error('保存数据失败（回调模式）:', browserAPI.runtime.lastError);
-                resolve(false);
-              } else {
-                resolve(true);
-              }
-            });
-          }
-        } else {
-          // 如果storage API不可用，保存失败
-          console.error('storage API不可用');
-          resolve(false);
-        }
-      });
+      // 获取当前存储类型
+      const storageType = await this.getStorageType();
+      
+      let result;
+      if (storageType === 'mysql') {
+        // 保存到MySQL数据库
+        console.debug('保存数据到MySQL数据库');
+        result = await this._saveAllDataToDatabase(data);
+      } else {
+        // 保存到本地存储
+        console.debug('保存数据到本地存储');
+        result = await this._saveAllDataToLocalStorage(data);
+      }
+      
+      return result;
     } catch (error) {
       console.error('保存数据失败:', error);
-      return false;
+      return { 
+        success: false, 
+        message: `保存数据失败: ${error.message}` 
+      };
+    }
+  }
+
+  /**
+   * 保存所有数据到本地存储
+   * @param {Object} data - 要保存的数据
+   * @returns {Promise<Object>} 保存结果，包含success和message字段
+   */
+  static async _saveAllDataToLocalStorage(data) {
+    try {
+      // 检查存储API是否可用
+      if (!BrowserAPI.storage?.local?.set) {
+        console.error('存储API不可用');
+        return { 
+          success: false, 
+          message: '存储API不可用' 
+        };
+      }
+
+      // 生成数据哈希值
+      const dataHash = this._generateDataHash(data);
+      
+      // 检查数据是否有变化
+      const currentHash = await this._getStoredHash();
+      if (dataHash === currentHash) {
+        console.debug('数据未变化，跳过保存');
+        return { success: true, message: '数据未变化，跳过保存' };
+      }
+
+      // 序列化数据
+      const jsonStr = JSON.stringify(data);
+      
+      // 压缩数据（如果启用）
+      const finalData = this.STORAGE_CONFIG.USE_COMPRESSION ? this.compressData(jsonStr) : jsonStr;
+      
+      // 准备存储数据
+      const saveData = {};
+      saveData[this.CACHE_CONFIG.KEY] = finalData;
+      saveData[this.STORAGE_CONFIG.HASH_KEY] = dataHash;
+      saveData[this.STORAGE_CONFIG.LAST_UPDATE_KEY] = Date.now();
+      
+      console.debug(`数据保存详情: 原始大小 ${jsonStr.length} 字节, 压缩后大小 ${finalData.length} 字节, 压缩率 ${Math.round((1 - finalData.length / jsonStr.length) * 100)}%`);
+
+      // 统一处理Promise和回调模式
+      if (BrowserAPI.storage.local.set.length === 1) {
+        // Promise模式
+        await BrowserAPI.storage.local.set(saveData);
+      } else {
+        // 回调模式
+        await new Promise((resolve, reject) => {
+          BrowserAPI.storage.local.set(saveData, () => {
+            if (BrowserAPI.runtime?.lastError) {
+              reject(new Error(BrowserAPI.runtime.lastError.message));
+            } else {
+              resolve();
+            }
+          });
+        });
+      }
+      
+      // 清除缓存，确保下次获取最新数据
+      this.clearCache('数据已更新');
+      
+      console.debug('数据保存到本地存储成功');
+      return { success: true, message: '数据保存成功' };
+    } catch (error) {
+      console.error('保存数据到本地存储失败:', error);
+      return { 
+        success: false, 
+        message: `保存数据失败: ${error.message}` 
+      };
+    }
+  }
+
+  /**
+   * 保存所有数据到数据库
+   * @param {Object} data - 要保存的数据
+   * @returns {Promise<Object>} 保存结果，包含success和message字段
+   */
+  static async _saveAllDataToDatabase(data) {
+    try {
+      // 提取所有网站数据
+      const allWebsites = [];
+      
+      // 遍历主分类、一级分类、二级分类，收集所有网站
+      data.mainCategories.forEach(mainCat => {
+        mainCat.categories.forEach(cat => {
+          cat.subCategories.forEach(subCat => {
+            subCat.websites.forEach(website => {
+              // 添加分类信息到网站数据中，方便数据库查询
+              const websiteWithCategory = {
+                ...website,
+                mainCategoryId: mainCat.id,
+                categoryId: cat.id,
+                subCategoryId: subCat.id
+              };
+              allWebsites.push(websiteWithCategory);
+            });
+          });
+        });
+      });
+      
+      // 保存网站数据到数据库
+      await DatabaseManager.saveWebsites(allWebsites);
+      
+      // 清除缓存，确保下次获取最新数据
+      this.clearCache('数据已更新到数据库');
+      
+      console.debug('数据保存到数据库成功');
+      return { success: true, message: '数据保存到数据库成功' };
+    } catch (error) {
+      console.error('保存数据到数据库失败:', error);
+      return { 
+        success: false, 
+        message: `保存数据到数据库失败: ${error.message}` 
+      };
+    }
+  }
+  
+  /**
+   * 获取存储的哈希值
+   * @returns {Promise<string>} 存储的哈希值
+   */
+  static async _getStoredHash() {
+    try {
+      if (!BrowserAPI.storage?.local?.get) {
+        return null;
+      }
+      
+      const result = BrowserAPI.storage.local.get([this.STORAGE_CONFIG.HASH_KEY]);
+      let storedHash = null;
+      
+      if (result && typeof result.then === 'function') {
+        const data = await result;
+        storedHash = data[this.STORAGE_CONFIG.HASH_KEY];
+      } else {
+        storedHash = await new Promise((resolve) => {
+          BrowserAPI.storage.local.get([this.STORAGE_CONFIG.HASH_KEY], (data) => {
+            resolve(data[this.STORAGE_CONFIG.HASH_KEY]);
+          });
+        });
+      }
+      
+      return storedHash;
+    } catch (error) {
+      console.error('获取存储哈希值失败:', error);
+      return null;
     }
   }
 
@@ -348,38 +910,13 @@ export class DataManager {
    */
   static async resetToDefault() {
     try {
-      // 使用兼容的存储API，处理Chrome的回调模式和Firefox的Promise模式
-      return new Promise((resolve) => {
-        // 如果浏览器支持Promise版本的storage API（Firefox）
-        if (browserAPI.storage?.local?.set && typeof browserAPI.storage.local.set === 'function') {
-          const result = browserAPI.storage.local.set({ navData: defaultData });
-          
-          // 检查是否是Promise
-          if (result && typeof result.then === 'function') {
-            // Promise模式
-            result.then(() => {
-              resolve(true);
-            }).catch(() => {
-              console.error('重置数据失败（Promise模式）');
-              resolve(false);
-            });
-          } else {
-            // 回调模式（Chrome）
-            browserAPI.storage.local.set({ navData: defaultData }, () => {
-              if (browserAPI.runtime?.lastError) {
-                console.error('重置数据失败（回调模式）:', browserAPI.runtime.lastError);
-                resolve(false);
-              } else {
-                resolve(true);
-              }
-            });
-          }
-        } else {
-          // 如果storage API不可用，重置失败
-          console.error('storage API不可用');
-          resolve(false);
-        }
-      });
+      console.debug('开始重置数据为默认值');
+      
+      // 直接使用saveAllData方法，复用其逻辑
+      const result = await this.saveAllData(defaultData);
+      
+      console.debug('数据重置成功');
+      return result.success;
     } catch (error) {
       console.error('重置数据失败:', error);
       return false;
@@ -393,44 +930,320 @@ export class DataManager {
    */
   static async importData(jsonData) {
     try {
+      console.debug('开始导入数据');
+      
       let data;
       if (typeof jsonData === 'string') {
+        console.debug('解析JSON字符串');
         data = JSON.parse(jsonData);
       } else {
+        console.debug('使用已有数据对象');
         data = jsonData;
       }
 
       // 验证数据结构
+      console.debug('验证数据结构');
       const validation = DataValidator.validateDataStructure(data);
       if (!validation.valid) {
-        return validation;
+        console.error('数据结构验证失败:', validation.message);
+        return { 
+          valid: false, 
+          message: `数据结构验证失败: ${validation.message}` 
+        };
       }
 
       // 保存数据
+      console.debug('保存导入的数据');
       const result = await this.saveAllData(data);
-      if (result) {
-        return { valid: true, message: '数据导入成功' };
+      
+      // 如果导入的数据包含存储配置，应用存储配置
+      if (data.storageConfig) {
+        console.debug('导入存储配置');
+        
+        // 设置存储类型
+        if (data.storageConfig.storageType) {
+          await this.setStorageType(data.storageConfig.storageType);
+        }
+        
+        // 设置MySQL配置
+        if (data.storageConfig.mysqlConfig) {
+          await this.configureMySQL(data.storageConfig.mysqlConfig);
+        }
+      }
+      
+      if (result.success) {
+        console.debug('数据导入成功');
+        return { 
+          valid: true, 
+          message: '数据导入成功' 
+        };
       } else {
-        return { valid: false, message: '数据保存失败' };
+        console.error('数据保存失败:', result.message);
+        return { 
+          valid: false, 
+          message: `数据保存失败: ${result.message}` 
+        };
       }
     } catch (error) {
       console.error('导入数据失败:', error);
-      return { valid: false, message: `导入失败: ${error.message}` };
+      let errorMessage = '导入失败';
+      
+      if (error instanceof SyntaxError) {
+        errorMessage = 'JSON格式错误，请检查文件内容';
+      } else if (error.message) {
+        errorMessage = `导入失败: ${error.message}`;
+      }
+      
+      return { 
+        valid: false, 
+        message: errorMessage 
+      };
     }
   }
 
   /**
    * 导出数据
-   * @returns {Promise<string|null>} 导出的JSON字符串
+   * @param {string} exportType - 导出类型: 'json' 或 'database' 或 'sql'
+   * @param {string} sourceType - 源存储类型: 'local', 'indexeddb' 或 'mysql'
+   * @returns {Promise<string|null>} 导出的JSON字符串或数据库SQL
    */
-  static async exportData() {
+  static async exportData(exportType = 'json', sourceType = null) {
     try {
+      console.debug('开始导出数据，导出类型:', exportType, '源存储类型:', sourceType);
+      
+      // 直接获取数据，不切换存储类型
+      // 这样可以确保始终使用当前配置的数据，避免切换存储类型导致的问题
       const data = await this.getAllData();
-      return JSON.stringify(data, null, 2);
+      
+      // 获取存储配置
+      const storageType = await this.getStorageType();
+      const mysqlConfig = await this.getMySQLConfig();
+      
+      let result;
+      // 确保导出类型匹配，支持多种可能的输入值
+      const isDatabaseExport = exportType === 'database' || exportType === 'sql';
+      if (isDatabaseExport) {
+        // 导出为数据库SQL
+        console.debug('开始生成SQL导出数据');
+        result = this._exportToSQL(data);
+        console.debug('SQL数据生成成功，长度:', result.length, '字符');
+        console.debug('SQL数据示例:', result.substring(0, 200) + '...');
+      } else {
+        // 导出为JSON
+        console.debug('开始生成JSON导出数据');
+        const exportData = {
+          ...data,
+          storageConfig: {
+            storageType: storageType,
+            mysqlConfig: mysqlConfig
+          }
+        };
+        
+        // 导出时始终使用格式化的JSON，不压缩，方便用户查看和编辑
+        result = JSON.stringify(exportData, null, 2);
+        console.debug('JSON数据生成成功，长度:', result.length, '字符');
+      }
+      
+      console.debug('数据导出成功，导出类型:', exportType, '实际生成:', isDatabaseExport ? 'SQL' : 'JSON');
+      return result;
     } catch (error) {
       console.error('导出数据失败:', error);
       return null;
     }
+  }
+  
+  /**
+   * 导出为SQL语句
+   * @param {Object} data - 要导出的数据
+   * @returns {string} SQL语句
+   */
+  static _exportToSQL(data) {
+    console.debug('开始生成SQL语句，输入数据结构:', JSON.stringify(Object.keys(data), null, 2));
+    
+    let sql = '-- CloudHut 导航数据导出\n';
+    sql += `-- 导出时间: ${new Date().toISOString()}\n\n`;
+    
+    // 确保data和data.mainCategories存在
+    if (!data || !Array.isArray(data.mainCategories)) {
+      console.error('导出为SQL失败: 数据结构无效，缺少mainCategories数组');
+      sql += '-- 错误: 数据结构无效，缺少mainCategories数组\n';
+      return sql;
+    }
+    
+    console.debug('主分类数量:', data.mainCategories.length);
+    
+    // 导出主分类
+    sql += '-- 主分类数据\n';
+    data.mainCategories.forEach((mainCat, mainCatIndex) => {
+      console.debug(`处理主分类 ${mainCatIndex + 1}: ${mainCat.name}`);
+      
+      sql += `INSERT INTO main_categories (id, name, icon, orderIndex) VALUES (`;
+      sql += `'${mainCat.id}', '${mainCat.name.replace(/'/g, "''")}', '${mainCat.icon}', ${mainCat.orderIndex || 0});\n`;
+      
+      // 导出一级分类
+      if (Array.isArray(mainCat.categories)) {
+        console.debug(`  一级分类数量: ${mainCat.categories.length}`);
+        
+        mainCat.categories.forEach((cat, catIndex) => {
+          console.debug(`  处理一级分类 ${catIndex + 1}: ${cat.name}`);
+          
+          sql += `INSERT INTO categories (id, name, mainCategoryId, orderIndex) VALUES (`;
+          sql += `'${cat.id}', '${cat.name.replace(/'/g, "''")}', '${mainCat.id}', ${cat.orderIndex || 0});\n`;
+          
+          // 导出二级分类
+          if (Array.isArray(cat.subCategories)) {
+            console.debug(`    二级分类数量: ${cat.subCategories.length}`);
+            
+            cat.subCategories.forEach((subCat, subCatIndex) => {
+              console.debug(`    处理二级分类 ${subCatIndex + 1}: ${subCat.name}`);
+              
+              sql += `INSERT INTO sub_categories (id, name, categoryId, orderIndex) VALUES (`;
+              sql += `'${subCat.id}', '${subCat.name.replace(/'/g, "''")}', '${cat.id}', ${subCat.orderIndex || 0});\n`;
+              
+              // 导出网站
+              if (Array.isArray(subCat.websites)) {
+                console.debug(`      网站数量: ${subCat.websites.length}`);
+                
+                subCat.websites.forEach((website, websiteIndex) => {
+                  console.debug(`      处理网站 ${websiteIndex + 1}: ${website.name}`);
+                  
+                  sql += `INSERT INTO websites (id, name, url, \`desc\`, tags, detail, mainCategoryId, categoryId, subCategoryId) VALUES (`;
+                  sql += `'${website.id}', '${website.name.replace(/'/g, "''")}', '${website.url}', `;
+                  sql += `'${(website.desc || '').replace(/'/g, "''")}', `;
+                  sql += `'${JSON.stringify(website.tags || []).replace(/'/g, "''")}', `;
+                  sql += `'${(website.detail || '').replace(/'/g, "''")}', `;
+                  sql += `'${mainCat.id}', '${cat.id}', '${subCat.id}');\n`;
+                });
+              } else {
+                console.debug(`      没有网站数据`);
+              }
+            });
+          } else {
+            console.debug(`    没有二级分类数据`);
+          }
+        });
+      } else {
+        console.debug(`  没有一级分类数据`);
+      }
+    });
+    
+    console.debug('SQL生成完成，总长度:', sql.length, '字符');
+    return sql;
+  }
+  
+  /**
+   * 同步数据从一种存储类型到另一种存储类型
+   * @param {string} sourceType - 源存储类型: 'local', 'indexeddb' 或 'mysql'
+   * @param {string} targetType - 目标存储类型: 'local', 'indexeddb' 或 'mysql'
+   * @returns {Promise<Object>} 同步结果
+   */
+  static async syncData(sourceType, targetType) {
+    try {
+      console.debug('开始同步数据，从', sourceType, '到', targetType);
+      
+      // 保存原始存储类型
+      const originalType = await this.getStorageType();
+      
+      // 从源存储类型获取数据
+      await this.setStorageType(sourceType);
+      const sourceData = await this.getAllData();
+      
+      // 切换到目标存储类型并保存数据
+      await this.setStorageType(targetType);
+      const result = await this.saveAllData(sourceData);
+      
+      // 恢复原始存储类型
+      await this.setStorageType(originalType);
+      
+      console.debug('数据同步成功，从', sourceType, '到', targetType);
+      return {
+        success: result.success,
+        message: `数据从 ${sourceType} 同步到 ${targetType} 成功`
+      };
+    } catch (error) {
+      console.error('同步数据失败:', error);
+      return {
+        success: false,
+        message: `数据同步失败: ${error.message}`
+      };
+    }
+  }
+  
+  /**
+   * 导出压缩数据（用于WebDAV备份）
+   * @returns {Promise<string|null>} 压缩后的JSON字符串
+   */
+  static async exportCompressedData() {
+    try {
+      console.debug('开始导出压缩数据');
+      
+      const data = await this.getAllData();
+      
+      // 获取存储类型
+      const storageType = await this.getStorageType();
+      
+      // 获取MySQL配置
+      const mysqlConfig = await this.getMySQLConfig();
+      
+      // 确保备份数据不包含敏感信息
+      const backupData = {
+        ...data,
+        config: {
+          ...data.config,
+          webdavConfig: {
+            url: '',
+            username: '',
+            password: '',
+            autoBackupEnabled: false,
+            autoBackupInterval: 'daily',
+            backupTime: 0
+          }
+        },
+        storageConfig: {
+          storageType: storageType,
+          mysqlConfig: {
+            ...mysqlConfig,
+            password: '' // 移除密码等敏感信息
+          }
+        }
+      };
+      
+      console.debug('获取数据成功，开始序列化和压缩');
+      
+      // 序列化并压缩数据
+      const jsonStr = JSON.stringify(backupData);
+      const compressedData = this.compressData(jsonStr);
+      
+      console.debug('数据压缩成功，压缩率:', Math.round((1 - compressedData.length / jsonStr.length) * 100) + '%');
+      
+      return compressedData;
+    } catch (error) {
+      console.error('导出压缩数据失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 过滤文件名中的特殊字符
+   * @param {string} filename - 原始文件名
+   * @returns {string} 过滤后的安全文件名
+   */
+  static sanitizeFilename(filename) {
+    // 移除或替换文件名中的特殊字符
+    const sanitized = filename
+      // 移除禁止的特殊字符
+      .replace(/[<>"'/\\|?*:;]/g, '_')
+      // 移除多余的空格
+      .replace(/\s+/g, '_')
+      // 确保文件名长度不超过255个字符
+      .substring(0, 255);
+    
+    // 确保文件名以.json结尾
+    if (!sanitized.endsWith('.json')) {
+      return `${sanitized}.json`;
+    }
+    
+    return sanitized;
   }
 
   /**
@@ -440,47 +1253,39 @@ export class DataManager {
    */
   static downloadJSON(data, filename = 'navData.json') {
     try {
+      console.debug('开始下载JSON文件');
+      
+      // 过滤文件名中的特殊字符
+      const safeFilename = this.sanitizeFilename(filename);
+      console.debug(`使用安全文件名: ${safeFilename}`);
+      
       const blob = new Blob([data], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
+      
       a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      a.download = safeFilename;
+      
+      // 使用requestAnimationFrame确保DOM已准备好
+      requestAnimationFrame(() => {
+        try {
+          // 不需要将元素添加到DOM中也能触发下载
+          a.click();
+          console.debug('文件下载已触发');
+          
+          // 立即释放URL对象，避免内存泄漏
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+            console.debug('已释放URL对象');
+          }, 100);
+        } catch (clickError) {
+          console.error('触发下载失败:', clickError);
+          URL.revokeObjectURL(url);
+        }
+      });
     } catch (error) {
       console.error('下载文件失败:', error);
     }
-  }
-
-  /**
-   * 从文件选择器导入数据
-   * @param {HTMLInputElement} inputElement - 文件输入元素
-   * @param {Function} callback - 回调函数
-   */
-  static importFromFile(inputElement, callback) {
-    const file = inputElement.files[0];
-    if (!file) return;
-
-    if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
-      callback({ valid: false, message: '请选择JSON格式文件' });
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const result = await this.importData(e.target.result);
-        callback(result);
-      } catch (error) {
-        callback({ valid: false, message: `文件读取失败: ${error.message}` });
-      }
-    };
-    reader.onerror = () => {
-      callback({ valid: false, message: '文件读取失败' });
-    };
-    reader.readAsText(file);
   }
 
   /**
@@ -489,31 +1294,62 @@ export class DataManager {
    * @returns {Promise<Object>} 导入结果
    */
   static async importFromFile(file) {
-    return new Promise((resolve, reject) => {
+    try {
+      console.debug('开始从文件导入数据');
+      
       if (!file) {
-        resolve({ valid: false, message: '未选择文件' });
-        return;
+        console.debug('未选择文件');
+        return { valid: false, message: '未选择文件' };
       }
 
       if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
-        resolve({ valid: false, message: '请选择JSON格式文件' });
-        return;
+        console.debug('文件格式错误，必须是JSON文件');
+        return { valid: false, message: '请选择JSON格式文件' };
       }
 
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const result = await this.importData(e.target.result);
-          resolve(result);
-        } catch (error) {
-          resolve({ valid: false, message: `文件读取失败: ${error.message}` });
-        }
+      console.debug(`开始读取文件: ${file.name}`);
+      const fileContent = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsText(file);
+      });
+      
+      console.debug('文件读取成功，开始导入数据');
+      const result = await this.importData(fileContent);
+      console.debug('数据导入成功');
+      
+      return result;
+    } catch (error) {
+      console.error('从文件导入数据失败:', error);
+      return { 
+        valid: false, 
+        message: `文件读取失败: ${error.message}` 
       };
-      reader.onerror = () => {
-        resolve({ valid: false, message: '文件读取失败' });
-      };
-      reader.readAsText(file);
-    });
+    }
+  }
+  
+  /**
+   * 从文件选择器导入数据（回调版本）
+   * @param {HTMLInputElement} inputElement - 文件输入元素
+   * @param {Function} callback - 回调函数
+   */
+  static importFromFileWithCallback(inputElement, callback) {
+    const file = inputElement.files[0];
+    
+    // 使用Promise版本的importFromFile，然后调用回调
+    this.importFromFile(file)
+      .then(result => {
+        callback(result);
+      })
+      .catch(error => {
+        console.error('从文件选择器导入数据失败:', error);
+        callback({ 
+          valid: false, 
+          message: `文件导入失败: ${error.message}` 
+        });
+      });
   }
 
   // 主类导航操作
@@ -560,10 +1396,10 @@ export class DataManager {
             data.mainCategories.push(newMainCategory);
             const saved = await this.saveAllData(data);
             
-            if (saved) {
+            if (saved.success) {
                 return { success: true, data: newMainCategory };
             } else {
-                return { success: false, message: '保存失败' };
+                return saved; // 返回具体的错误信息
             }
         } catch (error) {
             console.error('创建主类导航失败:', error);
@@ -612,10 +1448,10 @@ export class DataManager {
       mainCategory.categories.push(newCategory);
       const saved = await this.saveAllData(data);
       
-      if (saved) {
+      if (saved.success) {
         return { success: true, data: newCategory };
       } else {
-        return { success: false, message: '保存失败' };
+        return saved; // 返回具体的错误信息
       }
     } catch (error) {
       console.error('创建一级分类失败:', error);
@@ -639,7 +1475,8 @@ export class DataManager {
       if (index === -1) return false;
 
       mainCategory.categories.splice(index, 1);
-      return await this.saveAllData(data);
+      const result = await this.saveAllData(data);
+      return result.success;
     } catch (error) {
       console.error('删除一级分类失败:', error);
       return false;
@@ -677,10 +1514,10 @@ export class DataManager {
       category.subCategories.push(newSubcategory);
       const saved = await this.saveAllData(data);
       
-      if (saved) {
+      if (saved.success) {
         return { success: true, data: newSubcategory };
       } else {
-        return { success: false, message: '保存失败' };
+        return saved; // 返回具体的错误信息
       }
     } catch (error) {
       console.error('创建二级分类失败:', error);
@@ -708,7 +1545,8 @@ export class DataManager {
       if (index === -1) return false;
 
       category.subCategories.splice(index, 1);
-      return await this.saveAllData(data);
+      const result = await this.saveAllData(data);
+      return result.success;
     } catch (error) {
       console.error('删除二级分类失败:', error);
       return false;
@@ -716,6 +1554,88 @@ export class DataManager {
   }
 
   // 网站操作
+  /**
+   * 清理网站描述，去除或替换特殊符号
+   * @param {string} description - 原始描述
+   * @returns {string} 清理后的描述
+   */
+  static cleanWebsiteDescription(description) {
+    if (!description) {
+      return '';
+    }
+
+    return description
+      // 移除或替换禁止的特殊字符（保留|和?）
+      .replace(/[<>'"'\/\\\*:;]/g, '')
+      // 移除HTML标签（如果有）
+      .replace(/<[^>]*>/g, '')
+      // 移除多余的空格
+      .replace(/\s+/g, ' ')
+      // 移除多余的标点符号
+      .replace(/([，。！？；：])+/g, '$1')
+      // 去除首尾空格
+      .trim();
+  }
+
+  /**
+   * 获取网站描述
+   * @param {string} url - 网站URL
+   * @returns {Promise<string>} 网站描述
+   */
+  static async getWebsiteDescription(url) {
+    try {
+      // 发送请求到网站
+      const response = await fetch(url, {
+        method: 'GET',
+        timeout: 5000,
+        headers: {
+          'Accept': 'text/html'
+        }
+      });
+      
+      if (!response.ok) {
+        return '';
+      }
+      
+      const html = await response.text();
+      
+      // 解析HTML，提取描述
+      // 尝试从meta标签中提取描述
+      const descriptionMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i) ||
+                               html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+      
+      if (descriptionMatch && descriptionMatch[1]) {
+        let description = descriptionMatch[1].trim();
+        // 清理描述
+        description = this.cleanWebsiteDescription(description);
+        return description.substring(0, 150); // 限制最大长度
+      }
+      
+      // 如果没有meta描述，尝试从h1标签中提取
+      const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      if (h1Match && h1Match[1]) {
+        let h1Text = h1Match[1].replace(/<[^>]*>/g, '').trim();
+        // 清理描述
+        h1Text = this.cleanWebsiteDescription(h1Text);
+        return h1Text.substring(0, 150); // 限制最大长度
+      }
+      
+      // 如果没有h1，尝试从title标签中提取
+      const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      if (titleMatch && titleMatch[1]) {
+        let titleText = titleMatch[1].replace(/<[^>]*>/g, '').trim();
+        // 清理描述
+        titleText = this.cleanWebsiteDescription(titleText);
+        return titleText.substring(0, 150); // 限制最大长度
+      }
+      
+      return '';
+    } catch (error) {
+      console.error('获取网站描述失败:', error);
+      return '';
+    }
+  }
+
   /**
    * 创建网站
    * @param {string} mainCategoryId - 主类ID
@@ -746,21 +1666,32 @@ export class DataManager {
       }
 
       let websiteName, websiteUrl, websiteDesc, websiteTags;
-      
-      if (typeof name === 'object') {
-        // 如果传入的是对象，则直接使用
-        const websiteData = name;
-        websiteName = websiteData.name;
-        websiteUrl = websiteData.url;
-        websiteDesc = websiteData.desc || '';
-        websiteTags = websiteData.tags || [];
-      } else {
-        // 否则，使用传入的独立参数
-        websiteName = name;
-        websiteUrl = url;
-        websiteDesc = desc || '';
-        websiteTags = tags || [];
-      }
+
+    if (typeof name === 'object') {
+      // 如果传入的是对象，则直接使用
+      const websiteData = name;
+      websiteName = websiteData.name;
+      websiteUrl = websiteData.url;
+      websiteDesc = websiteData.desc || '';
+      websiteTags = websiteData.tags || [];
+    } else {
+      // 否则，使用传入的独立参数
+      websiteName = name;
+      websiteUrl = url;
+      websiteDesc = desc || '';
+      websiteTags = tags || [];
+    }
+
+    // 如果没有提供描述，尝试自动获取
+    if (!websiteDesc) {
+      websiteDesc = await this.getWebsiteDescription(websiteUrl);
+    } else {
+      // 清理用户提供的描述
+      websiteDesc = this.cleanWebsiteDescription(websiteDesc);
+    }
+
+    // 确保最终描述经过清理
+    websiteDesc = this.cleanWebsiteDescription(websiteDesc);
 
       const newWebsite = {
         id: generateId('web'),
@@ -773,10 +1704,10 @@ export class DataManager {
       subcategory.websites.push(newWebsite);
       const saved = await this.saveAllData(data);
       
-      if (saved) {
+      if (saved.success) {
         return { success: true, data: newWebsite };
       } else {
-        return { success: false, message: '保存失败' };
+        return saved; // 返回具体的错误信息
       }
     } catch (error) {
       console.error('创建网站失败:', error);
@@ -817,10 +1748,10 @@ export class DataManager {
       }
 
       const saved = await this.saveAllData(data);
-      if (saved) {
+      if (saved.success) {
         return { success: true, message: '网站更新成功' };
       } else {
-        return { success: false, message: '保存失败' };
+        return { success: false, message: saved.message }; // 返回具体的错误信息
       }
     } catch (error) {
       console.error('更新网站失败:', error);
@@ -859,10 +1790,10 @@ export class DataManager {
       }
 
       const saved = await this.saveAllData(data);
-      if (saved) {
+      if (saved.success) {
         return { success: true, message: '网站删除成功' };
       } else {
-        return { success: false, message: '保存失败' };
+        return { success: false, message: saved.message }; // 返回具体的错误信息
       }
     } catch (error) {
       console.error('删除网站失败:', error);
@@ -991,10 +1922,10 @@ export class DataManager {
       
       console.log('保存结果:', saved);
       
-      if (saved) {
+      if (saved.success) {
         return { success: true, message: '分类顺序已更新' };
       } else {
-        return { success: false, message: '保存失败' };
+        return { success: false, message: saved.message }; // 返回具体的错误信息
       }
     } catch (error) {
       console.error('更新分类顺序失败:', error);
@@ -1154,46 +2085,43 @@ export class DataManager {
       let backupUrl;
       let directoryUrl;
       
-      // 针对不同WebDAV服务器的备份路径策略
-      const backupStrategies = [
+      // 生成WebDAV备份路径策略列表
+    const generateBackupStrategies = (baseUrl) => [
         // 策略1: 直接使用用户配置的URL + 文件名
         () => {
-          backupUrl = url.endsWith('/') 
-            ? `${url}cloudhut-backup.json`
-            : `${url}/cloudhut-backup.json`;
-          directoryUrl = backupUrl.substring(0, backupUrl.lastIndexOf('/') + 1);
+            backupUrl = baseUrl.endsWith('/') 
+              ? `${baseUrl}cloudhut-backup.json`
+              : `${baseUrl}/cloudhut-backup.json`;
+            directoryUrl = backupUrl.substring(0, backupUrl.lastIndexOf('/') + 1);
         },
         
         // 策略2: 用户配置的URL + /cloudhut/子目录 + 文件名
         () => {
-          const baseUrl = url.endsWith('/') ? url : `${url}/`;
-          backupUrl = `${baseUrl}cloudhut/cloudhut-backup.json`;
-          directoryUrl = `${baseUrl}cloudhut/`;
+            const normalizedUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+            backupUrl = `${normalizedUrl}cloudhut/cloudhut-backup.json`;
+            directoryUrl = `${normalizedUrl}cloudhut/`;
         },
         
         // 策略3: 针对坚果云的特殊路径
         () => {
-          if (url.includes('jianguoyun.com')) {
-            // 坚果云可能需要特定的路径格式
-            if (url.endsWith('/dav/')) {
-              // 如果已经包含/dav/，尝试添加一个子目录
-              backupUrl = `${url}cloudhut/cloudhut-backup.json`;
-              directoryUrl = `${url}cloudhut/`;
-            } else if (url.endsWith('/')) {
-              // 如果以/结尾，尝试添加/dav/cloudhut/
-              backupUrl = `${url}dav/cloudhut/cloudhut-backup.json`;
-              directoryUrl = `${url}dav/cloudhut/`;
+            if (baseUrl.includes('jianguoyun.com')) {
+                if (baseUrl.endsWith('/dav/')) {
+                    backupUrl = `${baseUrl}cloudhut/cloudhut-backup.json`;
+                    directoryUrl = `${baseUrl}cloudhut/`;
+                } else if (baseUrl.endsWith('/')) {
+                    backupUrl = `${baseUrl}dav/cloudhut/cloudhut-backup.json`;
+                    directoryUrl = `${baseUrl}dav/cloudhut/`;
+                } else {
+                    backupUrl = `${baseUrl}/dav/cloudhut/cloudhut-backup.json`;
+                    directoryUrl = `${baseUrl}/dav/cloudhut/`;
+                }
             } else {
-              // 其他情况，尝试添加/dav/cloudhut/
-              backupUrl = `${url}/dav/cloudhut/cloudhut-backup.json`;
-              directoryUrl = `${url}/dav/cloudhut/`;
+                return false;
             }
-          } else {
-            // 非坚果云，跳过此策略
-            return false;
-          }
         }
-      ];
+    ];
+    
+    const backupStrategies = generateBackupStrategies(url);
       
       let currentStrategy = 0;
       let lastError = null;
@@ -1370,51 +2298,48 @@ export class DataManager {
       // 定义备份文件路径
       let backupUrl;
       
-      // 针对不同WebDAV服务器的恢复路径策略（与备份策略对应）
-      const restoreStrategies = [
+      // 生成WebDAV恢复路径策略列表
+      const generateRestoreStrategies = (baseUrl) => [
         // 策略1: 直接使用用户配置的URL + 文件名
         () => {
-          backupUrl = url.endsWith('/') 
-            ? `${url}cloudhut-backup.json`
-            : `${url}/cloudhut-backup.json`;
+          backupUrl = baseUrl.endsWith('/') 
+            ? `${baseUrl}cloudhut-backup.json`
+            : `${baseUrl}/cloudhut-backup.json`;
         },
         
         // 策略2: 用户配置的URL + /cloudhut/子目录 + 文件名
         () => {
-          const baseUrl = url.endsWith('/') ? url : `${url}/`;
-          backupUrl = `${baseUrl}cloudhut/cloudhut-backup.json`;
+          const normalizedUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+          backupUrl = `${normalizedUrl}cloudhut/cloudhut-backup.json`;
         },
         
         // 策略3: 针对坚果云的特殊路径
         () => {
-          if (url.includes('jianguoyun.com')) {
-            // 坚果云可能需要特定的路径格式
-            if (url.endsWith('/dav/')) {
-              // 如果已经包含/dav/，尝试添加一个子目录
-              backupUrl = `${url}cloudhut/cloudhut-backup.json`;
-            } else if (url.endsWith('/')) {
-              // 如果以/结尾，尝试添加/dav/cloudhut/
-              backupUrl = `${url}dav/cloudhut/cloudhut-backup.json`;
+          if (baseUrl.includes('jianguoyun.com')) {
+            if (baseUrl.endsWith('/dav/')) {
+              backupUrl = `${baseUrl}cloudhut/cloudhut-backup.json`;
+            } else if (baseUrl.endsWith('/')) {
+              backupUrl = `${baseUrl}dav/cloudhut/cloudhut-backup.json`;
             } else {
-              // 其他情况，尝试添加/dav/cloudhut/
-              backupUrl = `${url}/dav/cloudhut/cloudhut-backup.json`;
+              backupUrl = `${baseUrl}/dav/cloudhut/cloudhut-backup.json`;
             }
           } else {
-            // 非坚果云，跳过此策略
             return false;
           }
         },
         
         // 策略4: 直接尝试/dav/路径
         () => {
-          backupUrl = `${url.replace(/\/$/, '')}/dav/cloudhut-backup.json`;
+          backupUrl = `${baseUrl.replace(/\/$/, '')}/dav/cloudhut-backup.json`;
         },
         
         // 策略5: 尝试/dav/cloudhut/路径
         () => {
-          backupUrl = `${url.replace(/\/$/, '')}/dav/cloudhut/cloudhut-backup.json`;
+          backupUrl = `${baseUrl.replace(/\/$/, '')}/dav/cloudhut/cloudhut-backup.json`;
         }
       ];
+      
+      const restoreStrategies = generateRestoreStrategies(url);
       
       let currentStrategy = 0;
       let lastError = null;
@@ -1478,10 +2403,10 @@ export class DataManager {
             
             // 保存恢复的数据
             const saved = await this.saveAllData(mergedData);
-            if (saved) {
+            if (saved.success) {
               return { success: true, message: '数据恢复成功' };
             } else {
-              return { success: false, message: '数据恢复失败: 保存数据失败' };
+              return { success: false, message: `数据恢复失败: ${saved.message}` };
             }
           } else {
             lastError = {
@@ -1559,7 +2484,8 @@ export class DataManager {
     try {
       const data = await this.getAllData();
       data.config.webdavConfig = { ...data.config.webdavConfig, ...webdavConfig };
-      return await this.saveAllData(data);
+      const result = await this.saveAllData(data);
+      return result.success;
     } catch (error) {
       console.error('保存WebDAV配置失败:', error);
       return false;
